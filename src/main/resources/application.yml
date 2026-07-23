@@ -1,0 +1,42 @@
+server:
+  port: 6001
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: enterprise-mcp
+  ai:
+    mcp:
+      server:
+        annotation-scanner:
+          enabled: true
+        enabled: on
+        name: mcp-service
+        type: sync
+        version: 1.0.0
+        protocol: streamable
+        streamable-http:
+          mcp-endpoint: /mcp
+# Agent配置
+agent:
+  url: http://localhost:8080
+  tenant-id: 1
+  verify:
+    timestamp-skew-seconds: 300
+    nonce-ttl-seconds: 300
+
+llm:
+  # 大模型接口配置
+  # deepseek: https://api.deepseek.com deepseek-v4-flash sk-e1df528736344e6eae78d2d749bf0f50
+  # local: http://192.168.176.1:6060 qwen/qwen3.5-9b sk-lm-HISAi54A:dHM6EokGxUxudDcDhTl5
+  url: http://192.168.176.1:6060
+  model: "qwen/qwen3.5-9b"
+  # 建议通过环境变量注入密钥，避免在不同环境重复修改配置文件。
+  api-key: ${PFSC_LLM_API_KEY:sk-lm-HISAi54A:dHM6EokGxUxudDcDhTl5}
+  # 发送给大模型的业务提示词模板。
+  prompt: 请用简洁,专业,高效的方式回答
+
+rag:
+  # 知识库配置
+  url: http://localhost:9621
