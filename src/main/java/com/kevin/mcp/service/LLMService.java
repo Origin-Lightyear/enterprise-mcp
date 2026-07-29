@@ -56,7 +56,7 @@ public class LLMService {
      *
      * @return 默认模型名称
      */
-    public String getModelVersion() {
+    public String getDefaultModel() {
         return llmProcessor.getModel();
     }
 }

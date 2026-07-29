@@ -73,33 +73,55 @@ public class CommonInternalTool {
             @McpToolParam(description = "查询内容") String message,
             McpSyncRequestContext requestContext
     ) {
-        log.info("selectAll: {}", message);
+        log.debug("MCP SelectAll: {}", message);
         try {
+            // 验证签名, 并获取员工权限信息
             EmployeeAuth employeeAuth = agentVerify.verifySourceAndGetAuth(requestContext);
             if (employeeAuth == null) {
                 return "Unauthorized";
             }
 
+            // 调用LLM
             String result = llmService.chat(message);
+
+            // 生成执行计划
             var executionPlan = jsonPlanParser.parse(result);
+
+            // 权限审查
             PermissionReviewResult reviewResult = permissionReviewService.review(message, executionPlan, employeeAuth.permissionConfig());
+
+            // 提交审计报告
             reportAudit(message, executionPlan, reviewResult, employeeAuth.permissionConfig());
+
             if (!"allow".equalsIgnoreCase(reviewResult.decision())) {
+                log.info("权限拒绝: {}", reviewResult.denyReason());
                 return reviewResult.denyReason() == null || reviewResult.denyReason().isBlank()
                         ? "Unauthorized"
                         : reviewResult.denyReason();
             }
 
+            // 执行计划
             var executionResult = jsonPlanExecutor.execute(executionPlan);
             log.info("PlanExecutor 执行结果: {}", GsonUtil.toJson(executionResult));
+
+            // 敏感数据处理
             Object maskedResult = permissionReviewService.maskFinalResult(executionResult.finalResult(), reviewResult);
             return GsonUtil.toJson(maskedResult);
         } catch (Exception exception) {
-            log.error("selectAll error: {}", exception.getMessage());
-            return "查询失败";
+            log.error("MCP SelectAll Error: {}", exception.getMessage());
+            return "查询失败, 请联系管理员查看日志";
         }
     }
 
+
+    /**
+     * 提交审计报告。
+     *
+     * @param message 员工自然语言请求
+     * @param executionPlan 执行计划
+     * @param reviewResult 权限审查结果
+     * @param permissionConfig 员工权限配置
+     */
     private void reportAudit(String message, Object executionPlan, PermissionReviewResult reviewResult, Map<String, Object> permissionConfig) {
         try {
             Map<String, Object> auditPayload = new LinkedHashMap<>();
@@ -110,7 +132,7 @@ public class CommonInternalTool {
             auditPayload.put("reviewResult", reviewResult);
             auditPayload.put("decision", reviewResult.decision());
             auditPayload.put("matchedRules", reviewResult.matchedDenyRules());
-            auditPayload.put("modelVersion", llmService.getModelVersion());
+            auditPayload.put("modelVersion", llmService.getDefaultModel());
             agentServerClient.reportPermissionAudit(auditPayload);
         } catch (Exception exception) {
             log.warn("report permission audit failed: {}", exception.getMessage());
