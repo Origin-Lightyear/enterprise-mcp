@@ -11,6 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 管理租户配置、员工鉴权和随机数防重放缓存。
+ *
+ * @author Kevin
+ * @date 2026-07-29
  */
 @Component
 public class TenantCacheService {
@@ -24,31 +27,31 @@ public class TenantCacheService {
      *
      * @param nonceTtlSeconds 随机数去重窗口，单位秒
      */
-    public TenantCacheService(@Value("${agent.verify.nonce-ttl-seconds:300}") long nonceTtlSeconds) {
+    public TenantCacheService(@Value("${saas.verify.nonce-ttl-seconds:300}") long nonceTtlSeconds) {
         this.nonceTtlSeconds = nonceTtlSeconds;
     }
 
     /**
-     * 返回当前缓存的租户版本号，未命中时视为 0。
+     * 返回当前缓存中的租户版本号，未命中时视为 0。
      *
      * @param tenantId 租户标识
      * @return 本地缓存版本号
      */
     public long getTenantVersion(String tenantId) {
         TenantConfig tenantConfig = this.tenantConfigCache.get(tenantId);
-        return tenantConfig == null ? 0L : tenantConfig.versionNumber();
+        return tenantConfig == null || tenantConfig.version() == null ? 0L : tenantConfig.version().longValue();
     }
 
     /**
-     * 判断随机数是否在有效窗口内重复出现，避免重放请求重复进入业务层。
+     * 判断随机数是否在有效窗口内重复出现，避免重放请求再次进入业务层。
      *
      * @param tenantId 租户标识
      * @param nonce 请求随机数
      * @return 是否已使用
      */
     public boolean isNonceUsed(String tenantId, String nonce) {
-        clearExpiredNonce();
-        Instant expiresAt = this.nonceCache.get(buildNonceKey(tenantId, nonce));
+        this.clearExpiredNonce();
+        Instant expiresAt = this.nonceCache.get(this.buildNonceKey(tenantId, nonce));
         return expiresAt != null && expiresAt.isAfter(Instant.now());
     }
 
@@ -59,8 +62,8 @@ public class TenantCacheService {
      * @param nonce 请求随机数
      */
     public void rememberNonce(String tenantId, String nonce) {
-        clearExpiredNonce();
-        this.nonceCache.put(buildNonceKey(tenantId, nonce), Instant.now().plusSeconds(this.nonceTtlSeconds));
+        this.clearExpiredNonce();
+        this.nonceCache.put(this.buildNonceKey(tenantId, nonce), Instant.now().plusSeconds(this.nonceTtlSeconds));
     }
 
     /**
@@ -83,7 +86,7 @@ public class TenantCacheService {
      */
     public void refreshEmployeeAuth(String tenantId, EmployeeAuth employeeAuth) {
         if (employeeAuth != null) {
-            this.employeeAuthCache.put(buildEmployeeKey(tenantId, employeeAuth.employeeId()), employeeAuth);
+            this.employeeAuthCache.put(this.buildEmployeeKey(tenantId, employeeAuth.employeeId()), employeeAuth);
         }
     }
 
@@ -96,18 +99,29 @@ public class TenantCacheService {
      */
     public boolean isTenantRequestAllowed(String tenantId, String employeeId) {
         TenantConfig tenantConfig = this.tenantConfigCache.get(tenantId);
-        EmployeeAuth employeeAuth = this.employeeAuthCache.get(buildEmployeeKey(tenantId, employeeId));
+        EmployeeAuth employeeAuth = this.employeeAuthCache.get(this.buildEmployeeKey(tenantId, employeeId));
         if (tenantConfig == null || employeeAuth == null) {
             return false;
         }
-        if (!"ACTIVE".equalsIgnoreCase(tenantConfig.status())) {
+        if (!Integer.valueOf(1).equals(tenantConfig.status())) {
             return false;
         }
-        if (tenantConfig.authorizationDeadline() != null && !tenantConfig.authorizationDeadline().isBlank()
-                && Instant.parse(tenantConfig.authorizationDeadline()).isBefore(Instant.now())) {
+        if (tenantConfig.authEndTime() != null
+                && tenantConfig.authEndTime().atZone(java.time.ZoneOffset.ofHours(8)).toInstant().isBefore(Instant.now())) {
             return false;
         }
         return "ENABLED".equalsIgnoreCase(employeeAuth.status());
+    }
+
+    /**
+     * 读取员工鉴权快照，供权限审查复用已刷新的有效规则。
+     *
+     * @param tenantId 租户标识
+     * @param employeeId 员工标识
+     * @return 员工鉴权快照，未命中时返回 null
+     */
+    public EmployeeAuth getEmployeeAuth(String tenantId, String employeeId) {
+        return this.employeeAuthCache.get(this.buildEmployeeKey(tenantId, employeeId));
     }
 
     private void clearExpiredNonce() {

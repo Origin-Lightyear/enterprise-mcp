@@ -1,6 +1,8 @@
 package com.kevin.mcp.agent.connector;
 
 import jakarta.annotation.PostConstruct;
+import com.kevin.mcp.agent.connector.entity.TenantConfig;
+import com.kevin.mcp.processor.LLMProcessor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 public class AgentStartupSynchronizer {
     private final HttpAgentServerClient agentServerClient;
     private final TenantCacheService tenantCacheService;
+    private final LLMProcessor llmProcessor;
     private final String tenantId;
 
     /**
@@ -23,10 +26,12 @@ public class AgentStartupSynchronizer {
     public AgentStartupSynchronizer(
             HttpAgentServerClient agentServerClient,
             TenantCacheService tenantCacheService,
-            @Value("${agent.tenant-id}") String tenantId
+            LLMProcessor llmProcessor,
+            @Value("${saas.tenant-id}") String tenantId
     ) {
         this.agentServerClient = agentServerClient;
         this.tenantCacheService = tenantCacheService;
+        this.llmProcessor = llmProcessor;
         this.tenantId = tenantId;
     }
 
@@ -35,6 +40,8 @@ public class AgentStartupSynchronizer {
      */
     @PostConstruct
     public void syncTenantConfig() {
-        this.tenantCacheService.refreshTenantConfig(this.tenantId, this.agentServerClient.fetchTenantConfig(this.tenantId));
+        TenantConfig tenantConfig = this.agentServerClient.fetchTenantConfig(this.tenantId);
+        this.tenantCacheService.refreshTenantConfig(this.tenantId, tenantConfig);
+        this.llmProcessor.refreshTenantConfig(tenantConfig);
     }
 }

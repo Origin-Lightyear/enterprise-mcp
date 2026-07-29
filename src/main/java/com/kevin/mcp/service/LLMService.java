@@ -12,42 +12,51 @@ import java.text.MessageFormat;
 
 /**
  * 协调 LLM 规划结果与内部方法执行。
- * 先让模型基于注册表提供的精简方法描述生成调用计划，再交给执行器按 methodKey 落地执行。
  *
  * @author Kevin
- * 2026/7/21
+ * @date 2026-07-21
  */
 @Service
 public class LLMService {
+
     private static final Logger log = LoggerFactory.getLogger(LLMService.class);
 
-    LLMProcessor llmProcessor;
-    PrivateMcpToolSchemaRegistry privateMcpToolSchemaRegistry;
-    LLMService(
-            LLMProcessor llmProcessor,
-            PrivateMcpToolSchemaRegistry privateMcpToolSchemaRegistry
-    ) {
+    private final LLMProcessor llmProcessor;
+    private final PrivateMcpToolSchemaRegistry privateMcpToolSchemaRegistry;
+
+    /**
+     * 注入 LLM 处理器和内部 Tool Schema 注册表。
+     *
+     * @param llmProcessor LLM 处理器
+     * @param privateMcpToolSchemaRegistry 内部 Tool Schema 注册表
+     */
+    public LLMService(LLMProcessor llmProcessor, PrivateMcpToolSchemaRegistry privateMcpToolSchemaRegistry) {
         this.llmProcessor = llmProcessor;
         this.privateMcpToolSchemaRegistry = privateMcpToolSchemaRegistry;
     }
 
     /**
-     * 生成方法调用计划并执行，返回最终执行结果 JSON。
+     * 生成内部方法调用执行计划。
      *
-     * @param userPrompt 用户原始输入
-     * @return 最终执行结果 JSON
-     * @throws Exception 模型请求或计划执行失败
+     * @param userPrompt 员工原始输入
+     * @return 执行计划 JSON
+     * @throws Exception LLM 请求失败或计划生成失败
      */
     public String chat(String userPrompt) throws Exception {
-        // 获取内部注册Tool的JSONSchema
         String planningSchemas = GsonUtil.toJson(this.privateMcpToolSchemaRegistry.getPlanningSchemas());
-        // 构建LLM消息
         String queryMsg = MessageFormat.format(PromptContext.QUERY, userPrompt, planningSchemas, PromptContext.OUTPUT_SCHEMA);
-        // 请求LLM, 拿到模型结果(调用执行计划的JSONSchema)
         log.debug("LLM 用户意图: {} 构建请求: {}", userPrompt, queryMsg);
         String result = llmProcessor.chat(queryMsg);
-        // TODO LLM单点依赖/降级逻辑
         log.debug("LLM 用户意图: {} 返回: {}", userPrompt, result);
         return result;
+    }
+
+    /**
+     * 获取当前规划链路使用的默认模型名称。
+     *
+     * @return 默认模型名称
+     */
+    public String getModelVersion() {
+        return llmProcessor.getModel();
     }
 }

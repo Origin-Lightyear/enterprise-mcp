@@ -2,7 +2,6 @@ package com.kevin.mcp.agent.connector;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.kevin.mcp.util.GsonUtil;
 import org.apache.commons.codec.binary.Base32;
 import org.springframework.stereotype.Component;
 
@@ -24,18 +23,13 @@ import java.util.Base64;
 public class AgentSecurityCodec {
     /** 公钥 PEM 文本 */
     private static final String AGENT_PUBLIC_KEY_PEM = """
-            -----BEGIN PUBLIC KEY-----
-            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx/P6oqPeoEApV4r/stxK
-            ZNXjwWQ3IpObKJc9gpO6ujcAPvqBvZlO9LDDdYKpVYzasy2un0sBVym816vAkMXr
-            QLk16zqAM9/xWrpBIkNX60GniFqqebrDJ7PPSnAFqstLfeu5q7MsU3B5TjHcNUtW
-            gC+2uyzc7OV3VquqqKKdStmF7JvFg1utbR5cbnP0u/Vv2Rz/oUtYZS6mCfjGmyuM
-            bAatg2yCZpbJx9t7gVQh/eLin4DRHGZlCyzJUY/y/YXnN72KqkA+h5ZqbTmZ/CLm
-            KRn3bt9oMqWIbTQe0auKeVnzd56q7iPUr1FlX0JuvhwfkvSqKhq7siQ56SpB0Yct
-            7wIDAQAB
-            -----END PUBLIC KEY-----
+            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWLTj4ShHWRh0Qr01CuWli7tnfAOyRaE4TSiuAdm09yjoMn23XH1ien22vwg+
+            yQoW4AJsMF2mMiMOx4IyeVPAZYebLakY9tSu0/dzHWcEH5XJY5SjdVKux46Yr9a3GbkLQircdb9GjMMvVcwY0EAE4IVbS1JVVQlNaVEB8kJ+
+            CUefoijIhDELx4vgbrlLtrlhiLC3na2Yw4RDBnxPPooD5dNN3beZI0vtams1ENdkavLkQ02tQuaFnS7zlBYT0Cmh9GzMlSZKJMBlMDIf0EVMV49BTkvSa2to5rES2Kf8Y+
+            nZAiph3aKLYIRRIHgh+GOs/sLG+lHD6OhW6mNv1UPPwIDAQAB
             """;
     /** 预期公钥指纹 */
-    private static final String AGENT_PUBLIC_KEY_FINGERPRINT = "b60fbf7cf5a2cf058b5fcdd1a423554f0ccc1d2b924fcc576953108bd2dffd91";
+    private static final String AGENT_PUBLIC_KEY_FINGERPRINT = "5da5bbc3c8bd765387941d13a76359d0f20767d258c6130926699c65d4b5419a";
 
     private final PublicKey publicKey;
 
@@ -45,10 +39,7 @@ public class AgentSecurityCodec {
      */
     AgentSecurityCodec() {
         try {
-            String normalized = AGENT_PUBLIC_KEY_PEM
-                    .replace("-----BEGIN PUBLIC KEY-----", "")
-                    .replace("-----END PUBLIC KEY-----", "")
-                    .replaceAll("\\s+", "");
+            String normalized = AGENT_PUBLIC_KEY_PEM.replaceAll("\\s+", "").strip();
             byte[] decoded = Base64.getDecoder().decode(normalized);
             String actualFingerprint = sha256Fingerprint(decoded);
             if (!actualFingerprint.equalsIgnoreCase(AGENT_PUBLIC_KEY_FINGERPRINT)) {
