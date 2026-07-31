@@ -1,24 +1,6 @@
 server:
   port: 6001
 
-spring:
-  profiles:
-    active: dev
-  application:
-    name: enterprise-mcp
-  ai:
-    mcp:
-      server:
-        annotation-scanner:
-          enabled: true
-        enabled: on
-        name: mcp-service
-        type: sync
-        version: 1.0.0
-        protocol: streamable
-        streamable-http:
-          mcp-endpoint: /mcp
-
 # Agent配置
 saas:
   saas-server: http://localhost:8001
@@ -31,3 +13,83 @@ saas:
 rag:
   # 知识库配置
   url: http://localhost:9621
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: enterprise-mcp
+  datasource:
+    url: jdbc:mysql://39.105.57.219:3306/demo_erp?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root123
+    druid:
+      # ========== 连接池容量（高并发核心） ==========
+      initial-size: 4
+      min-idle: 6
+      max-active: 100
+      max-wait: 3000
+
+      # ========== 连接保活与检测 ==========
+      time-between-eviction-runs-millis: 10000
+      min-evictable-idle-time-millis: 30000
+      max-evictable-idle-time-millis: 60000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      keep-alive: true
+
+      # ========== 连接泄漏检测 ==========
+      remove-abandoned: true
+      remove-abandoned-timeout: 30
+      log-abandoned: true
+
+      # ========== 监控统计（StatFilter） ==========
+      filter:
+        stat:
+          enabled: true
+          log-slow-sql: true
+          slow-sql-millis: 5000
+          merge-sql: true
+        wall:
+          enabled: true
+
+      # ========== Web 监控页面 ==========
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: admin
+        login-password: admin
+        allow: 127.0.0.1
+        reset-enable: true
+
+      web-stat-filter:
+        enabled: true
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+  ai:
+    mcp:
+      server:
+        annotation-scanner:
+          enabled: true
+        enabled: on
+        name: linko-mcp
+        type: sync
+        version: 1.0.0
+        protocol: streamable
+        streamable-http:
+          mcp-endpoint: /mcp
+# ========== MyBatis 配置 ==========
+mybatis:
+  # Mapper XML 文件位置
+  mapper-locations: classpath*:mapper/**/*.xml
+  # 实体类包路径（用于别名）
+  type-aliases-package: com.kevin.mcp.entity
+  configuration:
+    # 开启驼峰命名映射（如 user_name -> userName）
+    map-underscore-to-camel-case: true
+    # 开启二级缓存（根据业务需要）
+    cache-enabled: false
+    # 日志输出（开发阶段建议开启）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
