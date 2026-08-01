@@ -3,9 +3,12 @@ package com.kevin.mcp.agent.connector;
 import com.kevin.mcp.agent.connector.entity.EmployeeAuth;
 import com.kevin.mcp.agent.connector.entity.TenantConfig;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -25,18 +28,29 @@ public class HttpAgentServerClient {
      *
      * @param saasServerUrl Platform 后端地址
      * @param tenantServerUrl Tenant 后端地址
+     * @param connectTimeout 连接超时
+     * @param readTimeout 读取超时
      */
     public HttpAgentServerClient(
             @Value("${saas.saas-server}") String saasServerUrl,
-            @Value("${saas.tenant-server}") String tenantServerUrl
+            @Value("${saas.tenant-server}") String tenantServerUrl,
+            @Value("${saas.http.connect-timeout:3s}") Duration connectTimeout,
+            @Value("${saas.http.read-timeout:10s}") Duration readTimeout
     ) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
         this.saasRestClient = RestClient.builder()
                 .baseUrl(saasServerUrl)
+                .requestFactory(requestFactory)
                 .defaultHeader("Accept", "application/json")
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.tenantRestClient = RestClient.builder()
                 .baseUrl(tenantServerUrl)
+                .requestFactory(requestFactory)
                 .defaultHeader("Accept", "application/json")
                 .defaultHeader("Content-Type", "application/json")
                 .build();
@@ -57,8 +71,6 @@ public class HttpAgentServerClient {
                 this.longValue(data.get("id")),
                 this.stringValue(data.get("llmKey")),
                 this.stringValue(data.get("llmUrl")),
-//                this.stringValue(data.get("mcpUrl")),
-//                this.stringValue(data.get("pubKey")),
                 this.integerValue(data.get("status")),
                 this.localDateTimeValue(data.get("authEndTime")),
                 this.integerValue(data.get("version"))

@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.SupplierMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="SupplierResultMap" type="com.kevin.mcp.entity.Supplier">
+        <id column="id" property="id"/>
+        <result column="code" property="code"/>
+        <result column="name" property="name"/>
+        <result column="contact" property="contact"/>
+        <result column="phone" property="phone"/>
+        <result column="address" property="address"/>
+        <result column="payment_terms" property="paymentTerms"/>
+        <result column="status" property="status"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        code,
+        name,
+        contact,
+        phone,
+        address,
+        payment_terms,
+        status
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="SupplierResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM supplier
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="SupplierResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM supplier
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="code != null and code != ''">
+                AND code = #{code}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="contact != null and contact != ''">
+                AND contact = #{contact}
+            </if>
+            <if test="phone != null and phone != ''">
+                AND phone = #{phone}
+            </if>
+            <if test="address != null and address != ''">
+                AND address = #{address}
+            </if>
+            <if test="paymentTerms != null and paymentTerms != ''">
+                AND payment_terms = #{paymentTerms}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM supplier
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="code != null and code != ''">
+                AND code = #{code}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="contact != null and contact != ''">
+                AND contact = #{contact}
+            </if>
+            <if test="phone != null and phone != ''">
+                AND phone = #{phone}
+            </if>
+            <if test="address != null and address != ''">
+                AND address = #{address}
+            </if>
+            <if test="paymentTerms != null and paymentTerms != ''">
+                AND payment_terms = #{paymentTerms}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.Supplier" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO supplier
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="code != null and code != ''">
+                code,
+            </if>
+            <if test="name != null and name != ''">
+                name,
+            </if>
+            <if test="contact != null and contact != ''">
+                contact,
+            </if>
+            <if test="phone != null and phone != ''">
+                phone,
+            </if>
+            <if test="address != null and address != ''">
+                address,
+            </if>
+            <if test="paymentTerms != null and paymentTerms != ''">
+                payment_terms,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="code != null and code != ''">
+                #{code},
+            </if>
+            <if test="name != null and name != ''">
+                #{name},
+            </if>
+            <if test="contact != null and contact != ''">
+                #{contact},
+            </if>
+            <if test="phone != null and phone != ''">
+                #{phone},
+            </if>
+            <if test="address != null and address != ''">
+                #{address},
+            </if>
+            <if test="paymentTerms != null and paymentTerms != ''">
+                #{paymentTerms},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.Supplier">
+        UPDATE supplier
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="code != null and code != ''">
+                code = #{code},
+            </if>
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="contact != null and contact != ''">
+                contact = #{contact},
+            </if>
+            <if test="phone != null and phone != ''">
+                phone = #{phone},
+            </if>
+            <if test="address != null and address != ''">
+                address = #{address},
+            </if>
+            <if test="paymentTerms != null and paymentTerms != ''">
+                payment_terms = #{paymentTerms},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM supplier
+        WHERE id = #{id}
+    </delete>
+</mapper>

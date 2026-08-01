@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.PromotionScopeItemMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="PromotionScopeItemResultMap" type="com.kevin.mcp.entity.PromotionScopeItem">
+        <id column="id" property="id"/>
+        <result column="promotion_id" property="promotionId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="gift_sku_id" property="giftSkuId"/>
+        <result column="discount_rate" property="discountRate"/>
+        <result column="min_qty" property="minQty"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        promotion_id,
+        sku_id,
+        gift_sku_id,
+        discount_rate,
+        min_qty
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="PromotionScopeItemResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM promotion_scope_item
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="PromotionScopeItemResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM promotion_scope_item
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="promotionId != null">
+                AND promotion_id = #{promotionId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="giftSkuId != null">
+                AND gift_sku_id = #{giftSkuId}
+            </if>
+            <if test="discountRate != null">
+                AND discount_rate = #{discountRate}
+            </if>
+            <if test="minQty != null">
+                AND min_qty = #{minQty}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM promotion_scope_item
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="promotionId != null">
+                AND promotion_id = #{promotionId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="giftSkuId != null">
+                AND gift_sku_id = #{giftSkuId}
+            </if>
+            <if test="discountRate != null">
+                AND discount_rate = #{discountRate}
+            </if>
+            <if test="minQty != null">
+                AND min_qty = #{minQty}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.PromotionScopeItem" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO promotion_scope_item
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="promotionId != null">
+                promotion_id,
+            </if>
+            <if test="skuId != null">
+                sku_id,
+            </if>
+            <if test="giftSkuId != null">
+                gift_sku_id,
+            </if>
+            <if test="discountRate != null">
+                discount_rate,
+            </if>
+            <if test="minQty != null">
+                min_qty,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="promotionId != null">
+                #{promotionId},
+            </if>
+            <if test="skuId != null">
+                #{skuId},
+            </if>
+            <if test="giftSkuId != null">
+                #{giftSkuId},
+            </if>
+            <if test="discountRate != null">
+                #{discountRate},
+            </if>
+            <if test="minQty != null">
+                #{minQty},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.PromotionScopeItem">
+        UPDATE promotion_scope_item
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="promotionId != null">
+                promotion_id = #{promotionId},
+            </if>
+            <if test="skuId != null">
+                sku_id = #{skuId},
+            </if>
+            <if test="giftSkuId != null">
+                gift_sku_id = #{giftSkuId},
+            </if>
+            <if test="discountRate != null">
+                discount_rate = #{discountRate},
+            </if>
+            <if test="minQty != null">
+                min_qty = #{minQty},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM promotion_scope_item
+        WHERE id = #{id}
+    </delete>
+</mapper>

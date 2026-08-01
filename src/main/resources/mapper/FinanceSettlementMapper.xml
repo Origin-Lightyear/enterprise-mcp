@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.FinanceSettlementMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="FinanceSettlementResultMap" type="com.kevin.mcp.entity.FinanceSettlement">
+        <id column="id" property="id"/>
+        <result column="store_id" property="storeId"/>
+        <result column="settle_date" property="settleDate"/>
+        <result column="total_sales" property="totalSales"/>
+        <result column="cash_amount" property="cashAmount"/>
+        <result column="weixin_amount" property="weixinAmount"/>
+        <result column="alipay_amount" property="alipayAmount"/>
+        <result column="card_amount" property="cardAmount"/>
+        <result column="coupon_amount" property="couponAmount"/>
+        <result column="refund_amount" property="refundAmount"/>
+        <result column="net_sales" property="netSales"/>
+        <result column="status" property="status"/>
+        <result column="settled_at" property="settledAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        store_id,
+        settle_date,
+        total_sales,
+        cash_amount,
+        weixin_amount,
+        alipay_amount,
+        card_amount,
+        coupon_amount,
+        refund_amount,
+        net_sales,
+        status,
+        settled_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="FinanceSettlementResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM finance_settlement
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="FinanceSettlementResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM finance_settlement
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="storeId != null">
+                AND store_id = #{storeId}
+            </if>
+            <if test="settleDate != null">
+                AND settle_date = #{settleDate}
+            </if>
+            <if test="totalSales != null">
+                AND total_sales = #{totalSales}
+            </if>
+            <if test="cashAmount != null">
+                AND cash_amount = #{cashAmount}
+            </if>
+            <if test="weixinAmount != null">
+                AND weixin_amount = #{weixinAmount}
+            </if>
+            <if test="alipayAmount != null">
+                AND alipay_amount = #{alipayAmount}
+            </if>
+            <if test="cardAmount != null">
+                AND card_amount = #{cardAmount}
+            </if>
+            <if test="couponAmount != null">
+                AND coupon_amount = #{couponAmount}
+            </if>
+            <if test="refundAmount != null">
+                AND refund_amount = #{refundAmount}
+            </if>
+            <if test="netSales != null">
+                AND net_sales = #{netSales}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="settledAt != null">
+                AND settled_at = #{settledAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM finance_settlement
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="storeId != null">
+                AND store_id = #{storeId}
+            </if>
+            <if test="settleDate != null">
+                AND settle_date = #{settleDate}
+            </if>
+            <if test="totalSales != null">
+                AND total_sales = #{totalSales}
+            </if>
+            <if test="cashAmount != null">
+                AND cash_amount = #{cashAmount}
+            </if>
+            <if test="weixinAmount != null">
+                AND weixin_amount = #{weixinAmount}
+            </if>
+            <if test="alipayAmount != null">
+                AND alipay_amount = #{alipayAmount}
+            </if>
+            <if test="cardAmount != null">
+                AND card_amount = #{cardAmount}
+            </if>
+            <if test="couponAmount != null">
+                AND coupon_amount = #{couponAmount}
+            </if>
+            <if test="refundAmount != null">
+                AND refund_amount = #{refundAmount}
+            </if>
+            <if test="netSales != null">
+                AND net_sales = #{netSales}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="settledAt != null">
+                AND settled_at = #{settledAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.FinanceSettlement" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO finance_settlement
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="storeId != null">
+                store_id,
+            </if>
+            <if test="settleDate != null">
+                settle_date,
+            </if>
+            <if test="totalSales != null">
+                total_sales,
+            </if>
+            <if test="cashAmount != null">
+                cash_amount,
+            </if>
+            <if test="weixinAmount != null">
+                weixin_amount,
+            </if>
+            <if test="alipayAmount != null">
+                alipay_amount,
+            </if>
+            <if test="cardAmount != null">
+                card_amount,
+            </if>
+            <if test="couponAmount != null">
+                coupon_amount,
+            </if>
+            <if test="refundAmount != null">
+                refund_amount,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+            <if test="settledAt != null">
+                settled_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="storeId != null">
+                #{storeId},
+            </if>
+            <if test="settleDate != null">
+                #{settleDate},
+            </if>
+            <if test="totalSales != null">
+                #{totalSales},
+            </if>
+            <if test="cashAmount != null">
+                #{cashAmount},
+            </if>
+            <if test="weixinAmount != null">
+                #{weixinAmount},
+            </if>
+            <if test="alipayAmount != null">
+                #{alipayAmount},
+            </if>
+            <if test="cardAmount != null">
+                #{cardAmount},
+            </if>
+            <if test="couponAmount != null">
+                #{couponAmount},
+            </if>
+            <if test="refundAmount != null">
+                #{refundAmount},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+            <if test="settledAt != null">
+                #{settledAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.FinanceSettlement">
+        UPDATE finance_settlement
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="storeId != null">
+                store_id = #{storeId},
+            </if>
+            <if test="settleDate != null">
+                settle_date = #{settleDate},
+            </if>
+            <if test="totalSales != null">
+                total_sales = #{totalSales},
+            </if>
+            <if test="cashAmount != null">
+                cash_amount = #{cashAmount},
+            </if>
+            <if test="weixinAmount != null">
+                weixin_amount = #{weixinAmount},
+            </if>
+            <if test="alipayAmount != null">
+                alipay_amount = #{alipayAmount},
+            </if>
+            <if test="cardAmount != null">
+                card_amount = #{cardAmount},
+            </if>
+            <if test="couponAmount != null">
+                coupon_amount = #{couponAmount},
+            </if>
+            <if test="refundAmount != null">
+                refund_amount = #{refundAmount},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="settledAt != null">
+                settled_at = #{settledAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM finance_settlement
+        WHERE id = #{id}
+    </delete>
+</mapper>

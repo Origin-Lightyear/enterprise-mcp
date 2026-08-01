@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.PurchaseOrderMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="PurchaseOrderResultMap" type="com.kevin.mcp.entity.PurchaseOrder">
+        <id column="id" property="id"/>
+        <result column="po_no" property="poNo"/>
+        <result column="supplier_id" property="supplierId"/>
+        <result column="warehouse_id" property="warehouseId"/>
+        <result column="total_amount" property="totalAmount"/>
+        <result column="status" property="status"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="audited_at" property="auditedAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        po_no,
+        supplier_id,
+        warehouse_id,
+        total_amount,
+        status,
+        created_by,
+        created_at,
+        audited_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="PurchaseOrderResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM purchase_order
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="PurchaseOrderResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM purchase_order
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="poNo != null and poNo != ''">
+                AND po_no = #{poNo}
+            </if>
+            <if test="supplierId != null">
+                AND supplier_id = #{supplierId}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="totalAmount != null">
+                AND total_amount = #{totalAmount}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="createdBy != null">
+                AND created_by = #{createdBy}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+            <if test="auditedAt != null">
+                AND audited_at = #{auditedAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM purchase_order
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="poNo != null and poNo != ''">
+                AND po_no = #{poNo}
+            </if>
+            <if test="supplierId != null">
+                AND supplier_id = #{supplierId}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="totalAmount != null">
+                AND total_amount = #{totalAmount}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="createdBy != null">
+                AND created_by = #{createdBy}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+            <if test="auditedAt != null">
+                AND audited_at = #{auditedAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.PurchaseOrder" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO purchase_order
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="poNo != null and poNo != ''">
+                po_no,
+            </if>
+            <if test="supplierId != null">
+                supplier_id,
+            </if>
+            <if test="warehouseId != null">
+                warehouse_id,
+            </if>
+            <if test="totalAmount != null">
+                total_amount,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+            <if test="createdBy != null">
+                created_by,
+            </if>
+            <if test="createdAt != null">
+                created_at,
+            </if>
+            <if test="auditedAt != null">
+                audited_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="poNo != null and poNo != ''">
+                #{poNo},
+            </if>
+            <if test="supplierId != null">
+                #{supplierId},
+            </if>
+            <if test="warehouseId != null">
+                #{warehouseId},
+            </if>
+            <if test="totalAmount != null">
+                #{totalAmount},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+            <if test="createdBy != null">
+                #{createdBy},
+            </if>
+            <if test="createdAt != null">
+                #{createdAt},
+            </if>
+            <if test="auditedAt != null">
+                #{auditedAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.PurchaseOrder">
+        UPDATE purchase_order
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="poNo != null and poNo != ''">
+                po_no = #{poNo},
+            </if>
+            <if test="supplierId != null">
+                supplier_id = #{supplierId},
+            </if>
+            <if test="warehouseId != null">
+                warehouse_id = #{warehouseId},
+            </if>
+            <if test="totalAmount != null">
+                total_amount = #{totalAmount},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="createdBy != null">
+                created_by = #{createdBy},
+            </if>
+            <if test="createdAt != null">
+                created_at = #{createdAt},
+            </if>
+            <if test="auditedAt != null">
+                audited_at = #{auditedAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM purchase_order
+        WHERE id = #{id}
+    </delete>
+</mapper>

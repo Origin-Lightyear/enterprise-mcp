@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.WarehouseReceiptMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="WarehouseReceiptResultMap" type="com.kevin.mcp.entity.WarehouseReceipt">
+        <id column="id" property="id"/>
+        <result column="receipt_no" property="receiptNo"/>
+        <result column="po_id" property="poId"/>
+        <result column="warehouse_id" property="warehouseId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="qty" property="qty"/>
+        <result column="cost_price" property="costPrice"/>
+        <result column="receipt_date" property="receiptDate"/>
+        <result column="inspector" property="inspector"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        receipt_no,
+        po_id,
+        warehouse_id,
+        sku_id,
+        qty,
+        cost_price,
+        receipt_date,
+        inspector
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="WarehouseReceiptResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM warehouse_receipt
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="WarehouseReceiptResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM warehouse_receipt
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="receiptNo != null and receiptNo != ''">
+                AND receipt_no = #{receiptNo}
+            </if>
+            <if test="poId != null">
+                AND po_id = #{poId}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="costPrice != null">
+                AND cost_price = #{costPrice}
+            </if>
+            <if test="receiptDate != null">
+                AND receipt_date = #{receiptDate}
+            </if>
+            <if test="inspector != null and inspector != ''">
+                AND inspector = #{inspector}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM warehouse_receipt
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="receiptNo != null and receiptNo != ''">
+                AND receipt_no = #{receiptNo}
+            </if>
+            <if test="poId != null">
+                AND po_id = #{poId}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="costPrice != null">
+                AND cost_price = #{costPrice}
+            </if>
+            <if test="receiptDate != null">
+                AND receipt_date = #{receiptDate}
+            </if>
+            <if test="inspector != null and inspector != ''">
+                AND inspector = #{inspector}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.WarehouseReceipt" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO warehouse_receipt
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="receiptNo != null and receiptNo != ''">
+                receipt_no,
+            </if>
+            <if test="poId != null">
+                po_id,
+            </if>
+            <if test="warehouseId != null">
+                warehouse_id,
+            </if>
+            <if test="skuId != null">
+                sku_id,
+            </if>
+            <if test="qty != null">
+                qty,
+            </if>
+            <if test="costPrice != null">
+                cost_price,
+            </if>
+            <if test="receiptDate != null">
+                receipt_date,
+            </if>
+            <if test="inspector != null and inspector != ''">
+                inspector,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="receiptNo != null and receiptNo != ''">
+                #{receiptNo},
+            </if>
+            <if test="poId != null">
+                #{poId},
+            </if>
+            <if test="warehouseId != null">
+                #{warehouseId},
+            </if>
+            <if test="skuId != null">
+                #{skuId},
+            </if>
+            <if test="qty != null">
+                #{qty},
+            </if>
+            <if test="costPrice != null">
+                #{costPrice},
+            </if>
+            <if test="receiptDate != null">
+                #{receiptDate},
+            </if>
+            <if test="inspector != null and inspector != ''">
+                #{inspector},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.WarehouseReceipt">
+        UPDATE warehouse_receipt
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="receiptNo != null and receiptNo != ''">
+                receipt_no = #{receiptNo},
+            </if>
+            <if test="poId != null">
+                po_id = #{poId},
+            </if>
+            <if test="warehouseId != null">
+                warehouse_id = #{warehouseId},
+            </if>
+            <if test="skuId != null">
+                sku_id = #{skuId},
+            </if>
+            <if test="qty != null">
+                qty = #{qty},
+            </if>
+            <if test="costPrice != null">
+                cost_price = #{costPrice},
+            </if>
+            <if test="receiptDate != null">
+                receipt_date = #{receiptDate},
+            </if>
+            <if test="inspector != null and inspector != ''">
+                inspector = #{inspector},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM warehouse_receipt
+        WHERE id = #{id}
+    </delete>
+</mapper>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.ItemBrandMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="ItemBrandResultMap" type="com.kevin.mcp.entity.ItemBrand">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="logo_url" property="logoUrl"/>
+        <result column="first_letter" property="firstLetter"/>
+        <result column="status" property="status"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        name,
+        logo_url,
+        first_letter,
+        status
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="ItemBrandResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM item_brand
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="ItemBrandResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM item_brand
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="logoUrl != null and logoUrl != ''">
+                AND logo_url = #{logoUrl}
+            </if>
+            <if test="firstLetter != null and firstLetter != ''">
+                AND first_letter = #{firstLetter}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM item_brand
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="logoUrl != null and logoUrl != ''">
+                AND logo_url = #{logoUrl}
+            </if>
+            <if test="firstLetter != null and firstLetter != ''">
+                AND first_letter = #{firstLetter}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.ItemBrand" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO item_brand
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                name,
+            </if>
+            <if test="logoUrl != null and logoUrl != ''">
+                logo_url,
+            </if>
+            <if test="firstLetter != null and firstLetter != ''">
+                first_letter,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                #{name},
+            </if>
+            <if test="logoUrl != null and logoUrl != ''">
+                #{logoUrl},
+            </if>
+            <if test="firstLetter != null and firstLetter != ''">
+                #{firstLetter},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.ItemBrand">
+        UPDATE item_brand
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="logoUrl != null and logoUrl != ''">
+                logo_url = #{logoUrl},
+            </if>
+            <if test="firstLetter != null and firstLetter != ''">
+                first_letter = #{firstLetter},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM item_brand
+        WHERE id = #{id}
+    </delete>
+</mapper>

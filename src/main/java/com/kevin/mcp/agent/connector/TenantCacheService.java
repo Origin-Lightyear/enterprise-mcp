@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -18,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class TenantCacheService {
     private final long nonceTtlSeconds;
+    private final ZoneId tenantZoneId;
     private final Map<String, TenantConfig> tenantConfigCache = new ConcurrentHashMap<>();
     private final Map<String, EmployeeAuth> employeeAuthCache = new ConcurrentHashMap<>();
     private final Map<String, Instant> nonceCache = new ConcurrentHashMap<>();
@@ -27,8 +30,12 @@ public class TenantCacheService {
      *
      * @param nonceTtlSeconds 随机数去重窗口，单位秒
      */
-    public TenantCacheService(@Value("${saas.verify.nonce-ttl-seconds:300}") long nonceTtlSeconds) {
+    public TenantCacheService(
+            @Value("${saas.verify.nonce-ttl-seconds:300}") long nonceTtlSeconds,
+            @Value("${saas.tenant-zone:Asia/Shanghai}") String tenantZone
+    ) {
         this.nonceTtlSeconds = nonceTtlSeconds;
+        this.tenantZoneId = ZoneId.of(tenantZone);
     }
 
     /**
@@ -40,6 +47,16 @@ public class TenantCacheService {
     public long getTenantVersion(String tenantId) {
         TenantConfig tenantConfig = this.tenantConfigCache.get(tenantId);
         return tenantConfig == null || tenantConfig.version() == null ? 0L : tenantConfig.version().longValue();
+    }
+
+    /**
+     * 读取当前租户配置快照，供同步器比较 Platform 配置是否发生变化。
+     *
+     * @param tenantId 租户标识
+     * @return 租户配置快照，尚未同步时返回 null
+     */
+    public TenantConfig getTenantConfig(String tenantId) {
+        return this.tenantConfigCache.get(tenantId);
     }
 
     /**
@@ -98,19 +115,33 @@ public class TenantCacheService {
      * @return 是否允许当前请求
      */
     public boolean isTenantRequestAllowed(String tenantId, String employeeId) {
-        TenantConfig tenantConfig = this.tenantConfigCache.get(tenantId);
         EmployeeAuth employeeAuth = this.employeeAuthCache.get(this.buildEmployeeKey(tenantId, employeeId));
-        if (tenantConfig == null || employeeAuth == null) {
-            return false;
-        }
-        if (!Integer.valueOf(1).equals(tenantConfig.status())) {
-            return false;
-        }
-        if (tenantConfig.authEndTime() != null
-                && tenantConfig.authEndTime().atZone(java.time.ZoneOffset.ofHours(8)).toInstant().isBefore(Instant.now())) {
+        if (TenantAvailability.AVAILABLE != this.getTenantAvailability(tenantId) || employeeAuth == null) {
             return false;
         }
         return "ENABLED".equalsIgnoreCase(employeeAuth.status());
+    }
+
+    /**
+     * 判断租户当前是否可用，让禁用和到期规则在进入 MCP 协议处理前即可生效。
+     * 授权截止时间按 Platform 所在业务时区解释，并在截止时刻立即视为到期。
+     *
+     * @param tenantId 租户标识
+     * @return 当前租户可用状态
+     */
+    public TenantAvailability getTenantAvailability(String tenantId) {
+        TenantConfig tenantConfig = this.tenantConfigCache.get(tenantId);
+        if (tenantConfig == null) {
+            return TenantAvailability.NOT_INITIALIZED;
+        }
+        if (!Integer.valueOf(1).equals(tenantConfig.status())) {
+            return TenantAvailability.DISABLED;
+        }
+        LocalDateTime authEndTime = tenantConfig.authEndTime();
+        if (authEndTime != null && !authEndTime.atZone(this.tenantZoneId).toInstant().isAfter(Instant.now())) {
+            return TenantAvailability.EXPIRED;
+        }
+        return TenantAvailability.AVAILABLE;
     }
 
     /**

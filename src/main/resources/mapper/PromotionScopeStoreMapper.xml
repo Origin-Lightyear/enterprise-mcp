@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.PromotionScopeStoreMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="PromotionScopeStoreResultMap" type="com.kevin.mcp.entity.PromotionScopeStore">
+        <id column="id" property="id"/>
+        <result column="promotion_id" property="promotionId"/>
+        <result column="store_id" property="storeId"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        promotion_id,
+        store_id
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="PromotionScopeStoreResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM promotion_scope_store
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="PromotionScopeStoreResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM promotion_scope_store
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="promotionId != null">
+                AND promotion_id = #{promotionId}
+            </if>
+            <if test="storeId != null">
+                AND store_id = #{storeId}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM promotion_scope_store
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="promotionId != null">
+                AND promotion_id = #{promotionId}
+            </if>
+            <if test="storeId != null">
+                AND store_id = #{storeId}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.PromotionScopeStore" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO promotion_scope_store
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="promotionId != null">
+                promotion_id,
+            </if>
+            <if test="storeId != null">
+                store_id,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="promotionId != null">
+                #{promotionId},
+            </if>
+            <if test="storeId != null">
+                #{storeId},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.PromotionScopeStore">
+        UPDATE promotion_scope_store
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="promotionId != null">
+                promotion_id = #{promotionId},
+            </if>
+            <if test="storeId != null">
+                store_id = #{storeId},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM promotion_scope_store
+        WHERE id = #{id}
+    </delete>
+</mapper>

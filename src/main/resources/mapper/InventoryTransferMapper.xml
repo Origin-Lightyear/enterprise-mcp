@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.InventoryTransferMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="InventoryTransferResultMap" type="com.kevin.mcp.entity.InventoryTransfer">
+        <id column="id" property="id"/>
+        <result column="transfer_no" property="transferNo"/>
+        <result column="from_warehouse_id" property="fromWarehouseId"/>
+        <result column="to_store_id" property="toStoreId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="qty" property="qty"/>
+        <result column="status" property="status"/>
+        <result column="out_time" property="outTime"/>
+        <result column="receive_time" property="receiveTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        transfer_no,
+        from_warehouse_id,
+        to_store_id,
+        sku_id,
+        qty,
+        status,
+        out_time,
+        receive_time,
+        created_by,
+        created_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="InventoryTransferResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM inventory_transfer
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="InventoryTransferResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM inventory_transfer
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="transferNo != null and transferNo != ''">
+                AND transfer_no = #{transferNo}
+            </if>
+            <if test="fromWarehouseId != null">
+                AND from_warehouse_id = #{fromWarehouseId}
+            </if>
+            <if test="toStoreId != null">
+                AND to_store_id = #{toStoreId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="outTime != null">
+                AND out_time = #{outTime}
+            </if>
+            <if test="receiveTime != null">
+                AND receive_time = #{receiveTime}
+            </if>
+            <if test="createdBy != null">
+                AND created_by = #{createdBy}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM inventory_transfer
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="transferNo != null and transferNo != ''">
+                AND transfer_no = #{transferNo}
+            </if>
+            <if test="fromWarehouseId != null">
+                AND from_warehouse_id = #{fromWarehouseId}
+            </if>
+            <if test="toStoreId != null">
+                AND to_store_id = #{toStoreId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="outTime != null">
+                AND out_time = #{outTime}
+            </if>
+            <if test="receiveTime != null">
+                AND receive_time = #{receiveTime}
+            </if>
+            <if test="createdBy != null">
+                AND created_by = #{createdBy}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.InventoryTransfer" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO inventory_transfer
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="transferNo != null and transferNo != ''">
+                transfer_no,
+            </if>
+            <if test="fromWarehouseId != null">
+                from_warehouse_id,
+            </if>
+            <if test="toStoreId != null">
+                to_store_id,
+            </if>
+            <if test="skuId != null">
+                sku_id,
+            </if>
+            <if test="qty != null">
+                qty,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+            <if test="outTime != null">
+                out_time,
+            </if>
+            <if test="receiveTime != null">
+                receive_time,
+            </if>
+            <if test="createdBy != null">
+                created_by,
+            </if>
+            <if test="createdAt != null">
+                created_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="transferNo != null and transferNo != ''">
+                #{transferNo},
+            </if>
+            <if test="fromWarehouseId != null">
+                #{fromWarehouseId},
+            </if>
+            <if test="toStoreId != null">
+                #{toStoreId},
+            </if>
+            <if test="skuId != null">
+                #{skuId},
+            </if>
+            <if test="qty != null">
+                #{qty},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+            <if test="outTime != null">
+                #{outTime},
+            </if>
+            <if test="receiveTime != null">
+                #{receiveTime},
+            </if>
+            <if test="createdBy != null">
+                #{createdBy},
+            </if>
+            <if test="createdAt != null">
+                #{createdAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.InventoryTransfer">
+        UPDATE inventory_transfer
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="transferNo != null and transferNo != ''">
+                transfer_no = #{transferNo},
+            </if>
+            <if test="fromWarehouseId != null">
+                from_warehouse_id = #{fromWarehouseId},
+            </if>
+            <if test="toStoreId != null">
+                to_store_id = #{toStoreId},
+            </if>
+            <if test="skuId != null">
+                sku_id = #{skuId},
+            </if>
+            <if test="qty != null">
+                qty = #{qty},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="outTime != null">
+                out_time = #{outTime},
+            </if>
+            <if test="receiveTime != null">
+                receive_time = #{receiveTime},
+            </if>
+            <if test="createdBy != null">
+                created_by = #{createdBy},
+            </if>
+            <if test="createdAt != null">
+                created_at = #{createdAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM inventory_transfer
+        WHERE id = #{id}
+    </delete>
+</mapper>

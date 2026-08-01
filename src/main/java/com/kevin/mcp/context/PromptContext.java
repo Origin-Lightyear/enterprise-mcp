@@ -1,5 +1,7 @@
 package com.kevin.mcp.context;
 
+import com.kevin.mcp.util.GsonUtil;
+
 /**
  * PromptContext
  *
@@ -10,13 +12,17 @@ public class PromptContext {
     public static final String QUERY = """
                 你要帮我分析用户指令的含义: "{0}"
                 你只能基于给定的方法描述来生成调用计划。
-                每个方法描述只包含 methodKey、用途说明和参数 Schema。
+                每个方法描述包含 methodKey、用途说明、参数 Schema 和返回值 Schema。
                 ---
                 当前可用的方法描述如下: {1}
                 ---
                 你必须严格按下面的 JSON Schema 返回调用计划，只输出最终 JSON 结果: {2}
                 """;
-    public static final String OUTPUT_SCHEMA = """
+    /**
+     * 定义 LLM 必须返回的执行计划 Schema。
+     * 保留可读源码并在类加载时压缩空白，避免重复请求携带无意义的格式字符。
+     */
+    public static final String OUTPUT_SCHEMA = GsonUtil.toJson(GsonUtil.fromJson("""
                 {
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
@@ -92,5 +98,5 @@ public class PromptContext {
                   },
                   "required": ["intent", "steps"]
                 }
-                """;
+                """, Object.class));
 }

@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.OrgStoreMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="OrgStoreResultMap" type="com.kevin.mcp.entity.OrgStore">
+        <id column="id" property="id"/>
+        <result column="company_id" property="companyId"/>
+        <result column="region_id" property="regionId"/>
+        <result column="code" property="code"/>
+        <result column="name" property="name"/>
+        <result column="level" property="level"/>
+        <result column="address" property="address"/>
+        <result column="contact_phone" property="contactPhone"/>
+        <result column="business_hours" property="businessHours"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        company_id,
+        region_id,
+        code,
+        name,
+        level,
+        address,
+        contact_phone,
+        business_hours,
+        status,
+        created_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="OrgStoreResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM org_store
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="OrgStoreResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM org_store
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="companyId != null">
+                AND company_id = #{companyId}
+            </if>
+            <if test="regionId != null">
+                AND region_id = #{regionId}
+            </if>
+            <if test="code != null and code != ''">
+                AND code = #{code}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="level != null and level != ''">
+                AND level = #{level}
+            </if>
+            <if test="address != null and address != ''">
+                AND address = #{address}
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                AND contact_phone = #{contactPhone}
+            </if>
+            <if test="businessHours != null and businessHours != ''">
+                AND business_hours = #{businessHours}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM org_store
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="companyId != null">
+                AND company_id = #{companyId}
+            </if>
+            <if test="regionId != null">
+                AND region_id = #{regionId}
+            </if>
+            <if test="code != null and code != ''">
+                AND code = #{code}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="level != null and level != ''">
+                AND level = #{level}
+            </if>
+            <if test="address != null and address != ''">
+                AND address = #{address}
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                AND contact_phone = #{contactPhone}
+            </if>
+            <if test="businessHours != null and businessHours != ''">
+                AND business_hours = #{businessHours}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.OrgStore" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO org_store
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="companyId != null">
+                company_id,
+            </if>
+            <if test="regionId != null">
+                region_id,
+            </if>
+            <if test="code != null and code != ''">
+                code,
+            </if>
+            <if test="name != null and name != ''">
+                name,
+            </if>
+            <if test="level != null and level != ''">
+                level,
+            </if>
+            <if test="address != null and address != ''">
+                address,
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                contact_phone,
+            </if>
+            <if test="businessHours != null and businessHours != ''">
+                business_hours,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+            <if test="createdAt != null">
+                created_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="companyId != null">
+                #{companyId},
+            </if>
+            <if test="regionId != null">
+                #{regionId},
+            </if>
+            <if test="code != null and code != ''">
+                #{code},
+            </if>
+            <if test="name != null and name != ''">
+                #{name},
+            </if>
+            <if test="level != null and level != ''">
+                #{level},
+            </if>
+            <if test="address != null and address != ''">
+                #{address},
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                #{contactPhone},
+            </if>
+            <if test="businessHours != null and businessHours != ''">
+                #{businessHours},
+            </if>
+            <if test="status != null">
+                #{status},
+            </if>
+            <if test="createdAt != null">
+                #{createdAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.OrgStore">
+        UPDATE org_store
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="companyId != null">
+                company_id = #{companyId},
+            </if>
+            <if test="regionId != null">
+                region_id = #{regionId},
+            </if>
+            <if test="code != null and code != ''">
+                code = #{code},
+            </if>
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="level != null and level != ''">
+                level = #{level},
+            </if>
+            <if test="address != null and address != ''">
+                address = #{address},
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                contact_phone = #{contactPhone},
+            </if>
+            <if test="businessHours != null and businessHours != ''">
+                business_hours = #{businessHours},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <if test="createdAt != null">
+                created_at = #{createdAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM org_store
+        WHERE id = #{id}
+    </delete>
+</mapper>

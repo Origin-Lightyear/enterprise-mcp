@@ -74,21 +74,51 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
 
     /**
      * 返回面向 LLM 规划阶段的精简方法描述。
-     * 只暴露 methodKey、用途说明和参数 Schema，确保模型生成的调用计划与执行器消费协议一一对应。
+     * 同时暴露输入和输出 Schema，让模型能够基于真实返回字段构造跨步骤引用；空描述和空集合会在转换时省略，以控制提示词长度。
      *
-     * @return 按 methodKey 索引的精简方法描述
+     * @return 按注册顺序排列的精简方法描述
      */
-    public Map<String, ToolPlanningSchema> getPlanningSchemas() {
-        LinkedHashMap<String, ToolPlanningSchema> planningSchemas = new LinkedHashMap<>();
-        for (Map.Entry<String, PrivateMcpToolSchemaDescriptor> entry : this.schemaDescriptorsByMethodKey.entrySet()) {
-            PrivateMcpToolSchemaDescriptor descriptor = entry.getValue();
-            planningSchemas.put(entry.getKey(), new ToolPlanningSchema(
+    public List<ToolPlanningSchema> getPlanningSchemas() {
+        List<ToolPlanningSchema> planningSchemas = new ArrayList<>();
+        for (PrivateMcpToolSchemaDescriptor descriptor : this.schemaDescriptorsByMethodKey.values()) {
+            planningSchemas.add(new ToolPlanningSchema(
                     descriptor.methodKey(),
-                    descriptor.description(),
-                    descriptor.inputSchema()
+                    descriptor.description() == null || descriptor.description().isBlank() ? null : descriptor.description(),
+                    compactSchema(descriptor.inputSchema()),
+                    compactSchema(descriptor.outputSchema())
             ));
         }
-        return Collections.unmodifiableMap(planningSchemas);
+        return List.copyOf(planningSchemas);
+    }
+
+    /**
+     * 将完整 Schema 转换为面向规划阶段的紧凑结构。
+     * 保留 {@code false} 等具有约束语义的值，仅把空字符串、空集合和原始 null 转换为 null，交由 Gson 省略对应字段以减少 token 消耗。
+     *
+     * @param schema 完整方法 Schema
+     * @return 紧凑 Schema；原始 Schema 为空时返回 null
+     */
+    private CompactMethodSchema compactSchema(PrivateMcpToolSchemaDescriptor.MethodSchema schema) {
+        if (schema == null) {
+            return null;
+        }
+        Map<String, CompactMethodSchema> properties = null;
+        if (!schema.properties().isEmpty()) {
+            LinkedHashMap<String, CompactMethodSchema> compactProperties = new LinkedHashMap<>();
+            for (PrivateMcpToolSchemaDescriptor.SchemaProperty property : schema.properties()) {
+                compactProperties.put(property.name(), compactSchema(property.schema()));
+            }
+            properties = Collections.unmodifiableMap(compactProperties);
+        }
+        return new CompactMethodSchema(
+                schema.type(),
+                schema.description() == null || schema.description().isBlank() ? null : schema.description(),
+                schema.additionalProperties(),
+                schema.required().isEmpty() ? null : schema.required(),
+                properties,
+                compactSchema(schema.items()),
+                schema.enumValues().isEmpty() ? null : schema.enumValues()
+        );
     }
 
     /**
@@ -215,16 +245,41 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
     }
 
     /**
-     * 承载供 LLM 规划使用的最小方法描述。
+     * 承载供 LLM 规划使用的方法描述。
      *
      * @param methodKey 方法唯一键
      * @param description 方法用途说明
      * @param parameters 参数 Schema
+     * @param outputSchema 返回值 Schema
      */
     public record ToolPlanningSchema(
             String methodKey,
             String description,
-            PrivateMcpToolSchemaDescriptor.MethodSchema parameters
+            CompactMethodSchema parameters,
+            CompactMethodSchema outputSchema
+    ) {
+    }
+
+    /**
+     * 承载省略空值后的规划阶段 Schema 节点。
+     * 独立于完整注册 Schema，避免 token 优化破坏权限审查阶段依赖的非空集合约定。
+     *
+     * @param type JSON Schema 类型
+     * @param description 节点描述
+     * @param additionalProperties 是否允许额外字段
+     * @param required 必填字段
+     * @param properties 按属性名索引的对象属性
+     * @param items 数组元素 Schema
+     * @param enumValues 枚举值
+     */
+    public record CompactMethodSchema(
+            String type,
+            String description,
+            Boolean additionalProperties,
+            List<String> required,
+            Map<String, CompactMethodSchema> properties,
+            CompactMethodSchema items,
+            List<String> enumValues
     ) {
     }
 }

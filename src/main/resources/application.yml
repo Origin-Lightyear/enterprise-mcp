@@ -6,6 +6,17 @@ saas:
   saas-server: http://localhost:8001
   tenant-server: http://localhost:8002
   tenant-id: 10000
+  # Platform 使用本地时间返回授权截止时间，MCPServer 按同一业务时区判断是否到期。
+  tenant-zone: Asia/Shanghai
+  tenant-config-polling:
+    # 启动同步失败后首次重试等待时间。
+    initial-delay: 30s
+    # 每次同步结束后等待该时长再拉取，避免 Platform 故障时形成紧密重试。
+    fixed-delay: 30s
+  http:
+    # Platform/Tenant 网络异常时快速释放轮询线程和请求线程。
+    connect-timeout: 3s
+    read-timeout: 10s
   verify:
     timestamp-skew-seconds: 300
     nonce-ttl-seconds: 300

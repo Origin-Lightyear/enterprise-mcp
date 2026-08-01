@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.MemberLevelMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="MemberLevelResultMap" type="com.kevin.mcp.entity.MemberLevel">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="discount_rate" property="discountRate"/>
+        <result column="min_points" property="minPoints"/>
+        <result column="benefits" property="benefits"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        name,
+        discount_rate,
+        min_points,
+        benefits
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="MemberLevelResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM member_level
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="MemberLevelResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM member_level
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="discountRate != null">
+                AND discount_rate = #{discountRate}
+            </if>
+            <if test="minPoints != null">
+                AND min_points = #{minPoints}
+            </if>
+            <if test="benefits != null and benefits != ''">
+                AND benefits = #{benefits}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM member_level
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="name != null and name != ''">
+                AND name = #{name}
+            </if>
+            <if test="discountRate != null">
+                AND discount_rate = #{discountRate}
+            </if>
+            <if test="minPoints != null">
+                AND min_points = #{minPoints}
+            </if>
+            <if test="benefits != null and benefits != ''">
+                AND benefits = #{benefits}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.MemberLevel" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO member_level
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                name,
+            </if>
+            <if test="discountRate != null">
+                discount_rate,
+            </if>
+            <if test="minPoints != null">
+                min_points,
+            </if>
+            <if test="benefits != null and benefits != ''">
+                benefits,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                #{name},
+            </if>
+            <if test="discountRate != null">
+                #{discountRate},
+            </if>
+            <if test="minPoints != null">
+                #{minPoints},
+            </if>
+            <if test="benefits != null and benefits != ''">
+                #{benefits},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.MemberLevel">
+        UPDATE member_level
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="discountRate != null">
+                discount_rate = #{discountRate},
+            </if>
+            <if test="minPoints != null">
+                min_points = #{minPoints},
+            </if>
+            <if test="benefits != null and benefits != ''">
+                benefits = #{benefits},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM member_level
+        WHERE id = #{id}
+    </delete>
+</mapper>

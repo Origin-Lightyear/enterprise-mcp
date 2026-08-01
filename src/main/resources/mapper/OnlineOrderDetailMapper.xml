@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.OnlineOrderDetailMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="OnlineOrderDetailResultMap" type="com.kevin.mcp.entity.OnlineOrderDetail">
+        <id column="id" property="id"/>
+        <result column="order_id" property="orderId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="qty" property="qty"/>
+        <result column="price" property="price"/>
+        <result column="total_amount" property="totalAmount"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        order_id,
+        sku_id,
+        qty,
+        price,
+        total_amount
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="OnlineOrderDetailResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM online_order_detail
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="OnlineOrderDetailResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM online_order_detail
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="orderId != null">
+                AND order_id = #{orderId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="price != null">
+                AND price = #{price}
+            </if>
+            <if test="totalAmount != null">
+                AND total_amount = #{totalAmount}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM online_order_detail
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="orderId != null">
+                AND order_id = #{orderId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="price != null">
+                AND price = #{price}
+            </if>
+            <if test="totalAmount != null">
+                AND total_amount = #{totalAmount}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.OnlineOrderDetail" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO online_order_detail
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="orderId != null">
+                order_id,
+            </if>
+            <if test="skuId != null">
+                sku_id,
+            </if>
+            <if test="qty != null">
+                qty,
+            </if>
+            <if test="price != null">
+                price,
+            </if>
+            <if test="totalAmount != null">
+                total_amount,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="orderId != null">
+                #{orderId},
+            </if>
+            <if test="skuId != null">
+                #{skuId},
+            </if>
+            <if test="qty != null">
+                #{qty},
+            </if>
+            <if test="price != null">
+                #{price},
+            </if>
+            <if test="totalAmount != null">
+                #{totalAmount},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.OnlineOrderDetail">
+        UPDATE online_order_detail
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="orderId != null">
+                order_id = #{orderId},
+            </if>
+            <if test="skuId != null">
+                sku_id = #{skuId},
+            </if>
+            <if test="qty != null">
+                qty = #{qty},
+            </if>
+            <if test="price != null">
+                price = #{price},
+            </if>
+            <if test="totalAmount != null">
+                total_amount = #{totalAmount},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM online_order_detail
+        WHERE id = #{id}
+    </delete>
+</mapper>

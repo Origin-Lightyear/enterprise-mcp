@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.PosPaymentMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="PosPaymentResultMap" type="com.kevin.mcp.entity.PosPayment">
+        <id column="id" property="id"/>
+        <result column="order_id" property="orderId"/>
+        <result column="pay_type" property="payType"/>
+        <result column="pay_amount" property="payAmount"/>
+        <result column="transaction_id" property="transactionId"/>
+        <result column="card_last_four" property="cardLastFour"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        order_id,
+        pay_type,
+        pay_amount,
+        transaction_id,
+        card_last_four
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="PosPaymentResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM pos_payment
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="PosPaymentResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM pos_payment
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="orderId != null">
+                AND order_id = #{orderId}
+            </if>
+            <if test="payType != null and payType != ''">
+                AND pay_type = #{payType}
+            </if>
+            <if test="payAmount != null">
+                AND pay_amount = #{payAmount}
+            </if>
+            <if test="transactionId != null and transactionId != ''">
+                AND transaction_id = #{transactionId}
+            </if>
+            <if test="cardLastFour != null and cardLastFour != ''">
+                AND card_last_four = #{cardLastFour}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM pos_payment
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="orderId != null">
+                AND order_id = #{orderId}
+            </if>
+            <if test="payType != null and payType != ''">
+                AND pay_type = #{payType}
+            </if>
+            <if test="payAmount != null">
+                AND pay_amount = #{payAmount}
+            </if>
+            <if test="transactionId != null and transactionId != ''">
+                AND transaction_id = #{transactionId}
+            </if>
+            <if test="cardLastFour != null and cardLastFour != ''">
+                AND card_last_four = #{cardLastFour}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.PosPayment" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO pos_payment
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="orderId != null">
+                order_id,
+            </if>
+            <if test="payType != null and payType != ''">
+                pay_type,
+            </if>
+            <if test="payAmount != null">
+                pay_amount,
+            </if>
+            <if test="transactionId != null and transactionId != ''">
+                transaction_id,
+            </if>
+            <if test="cardLastFour != null and cardLastFour != ''">
+                card_last_four,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="orderId != null">
+                #{orderId},
+            </if>
+            <if test="payType != null and payType != ''">
+                #{payType},
+            </if>
+            <if test="payAmount != null">
+                #{payAmount},
+            </if>
+            <if test="transactionId != null and transactionId != ''">
+                #{transactionId},
+            </if>
+            <if test="cardLastFour != null and cardLastFour != ''">
+                #{cardLastFour},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.PosPayment">
+        UPDATE pos_payment
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="orderId != null">
+                order_id = #{orderId},
+            </if>
+            <if test="payType != null and payType != ''">
+                pay_type = #{payType},
+            </if>
+            <if test="payAmount != null">
+                pay_amount = #{payAmount},
+            </if>
+            <if test="transactionId != null and transactionId != ''">
+                transaction_id = #{transactionId},
+            </if>
+            <if test="cardLastFour != null and cardLastFour != ''">
+                card_last_four = #{cardLastFour},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM pos_payment
+        WHERE id = #{id}
+    </delete>
+</mapper>

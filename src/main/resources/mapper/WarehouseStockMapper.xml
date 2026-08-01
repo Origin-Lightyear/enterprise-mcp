@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.WarehouseStockMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="WarehouseStockResultMap" type="com.kevin.mcp.entity.WarehouseStock">
+        <id column="id" property="id"/>
+        <result column="warehouse_id" property="warehouseId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="qty" property="qty"/>
+        <result column="lock_qty" property="lockQty"/>
+        <result column="available_qty" property="availableQty"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        warehouse_id,
+        sku_id,
+        qty,
+        lock_qty,
+        available_qty,
+        updated_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="WarehouseStockResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM warehouse_stock
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="WarehouseStockResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM warehouse_stock
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="lockQty != null">
+                AND lock_qty = #{lockQty}
+            </if>
+            <if test="availableQty != null">
+                AND available_qty = #{availableQty}
+            </if>
+            <if test="updatedAt != null">
+                AND updated_at = #{updatedAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM warehouse_stock
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="warehouseId != null">
+                AND warehouse_id = #{warehouseId}
+            </if>
+            <if test="skuId != null">
+                AND sku_id = #{skuId}
+            </if>
+            <if test="qty != null">
+                AND qty = #{qty}
+            </if>
+            <if test="lockQty != null">
+                AND lock_qty = #{lockQty}
+            </if>
+            <if test="availableQty != null">
+                AND available_qty = #{availableQty}
+            </if>
+            <if test="updatedAt != null">
+                AND updated_at = #{updatedAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.WarehouseStock" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO warehouse_stock
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="warehouseId != null">
+                warehouse_id,
+            </if>
+            <if test="skuId != null">
+                sku_id,
+            </if>
+            <if test="qty != null">
+                qty,
+            </if>
+            <if test="lockQty != null">
+                lock_qty,
+            </if>
+            <if test="updatedAt != null">
+                updated_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="warehouseId != null">
+                #{warehouseId},
+            </if>
+            <if test="skuId != null">
+                #{skuId},
+            </if>
+            <if test="qty != null">
+                #{qty},
+            </if>
+            <if test="lockQty != null">
+                #{lockQty},
+            </if>
+            <if test="updatedAt != null">
+                #{updatedAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.WarehouseStock">
+        UPDATE warehouse_stock
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="warehouseId != null">
+                warehouse_id = #{warehouseId},
+            </if>
+            <if test="skuId != null">
+                sku_id = #{skuId},
+            </if>
+            <if test="qty != null">
+                qty = #{qty},
+            </if>
+            <if test="lockQty != null">
+                lock_qty = #{lockQty},
+            </if>
+            <if test="updatedAt != null">
+                updated_at = #{updatedAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM warehouse_stock
+        WHERE id = #{id}
+    </delete>
+</mapper>

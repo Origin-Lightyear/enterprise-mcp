@@ -35,27 +35,27 @@ public class LLMProcessor {
     /**
      * 保存当前租户生效的大模型服务地址。
      */
-    private String baseUrl = "";
+    private volatile String baseUrl = "";
 
     /**
      * 保存当前租户生效的默认模型名称。
      */
-    private String model = "";
+    private volatile String model = "";
 
     /**
      * 保存当前租户生效的系统提示词模板。
      */
-    private String prompt = "";
+    private volatile String prompt = "";
 
     /**
      * 保存当前租户生效的访问密钥。
      */
-    private String apiKey = "";
+    private volatile String apiKey = "";
 
     /**
      * 标记是否已经完成基于 Platform 租户配置的初始化，避免在配置未就绪时误发请求。
      */
-    private boolean initialized;
+    private volatile boolean initialized;
 
     /**
      * 记录组件创建完成。真正的模型初始化必须等待 Platform 租户配置下发。
@@ -77,18 +77,15 @@ public class LLMProcessor {
         }
         String tenantBaseUrl = this.normalizeBaseUrl(this.requireText(tenantConfig.llmUrl(), "llmUrl"));
         String tenantApiKey = this.normalizeText(this.requireText(tenantConfig.llmKey(), "llmKey"));
-        String currentBaseUrl = this.baseUrl;
-        String currentApiKey = this.apiKey;
-        String currentModel = this.model;
-
-        this.baseUrl = tenantBaseUrl;
-        this.apiKey = tenantApiKey;
-        String tenantModel = this.resolveFirstAvailableModel();
-        boolean changed = !tenantBaseUrl.equals(currentBaseUrl)
-                || !tenantApiKey.equals(currentApiKey)
-                || !tenantModel.equals(currentModel)
+        String tenantModel = this.resolveFirstAvailableModel(tenantBaseUrl, tenantApiKey);
+        boolean changed = !tenantBaseUrl.equals(this.baseUrl)
+                || !tenantApiKey.equals(this.apiKey)
+                || !tenantModel.equals(this.model)
                 || !this.initialized;
 
+        // 候选连接验证成功后再整体发布，避免业务线程观察到地址、密钥和模型不匹配的中间状态。
+        this.baseUrl = tenantBaseUrl;
+        this.apiKey = tenantApiKey;
         this.model = tenantModel;
         this.prompt = "";
         this.initialized = true;
@@ -98,6 +95,20 @@ public class LLMProcessor {
         }
         log.info("已按租户配置刷新 LLM 连接信息，当前 url: {}, model: {}", this.baseUrl, this.model);
         this.performStartupHealthCheck();
+    }
+
+    /**
+     * 判断指定 Platform 配置是否已经应用到当前 LLM 连接。
+     *
+     * @param tenantConfig Platform 租户配置
+     * @return 地址和密钥是否已成功应用
+     */
+    public boolean isTenantConfigApplied(TenantConfig tenantConfig) {
+        if (tenantConfig == null || !this.initialized) {
+            return false;
+        }
+        return this.normalizeBaseUrl(tenantConfig.llmUrl()).equals(this.baseUrl)
+                && this.normalizeText(tenantConfig.llmKey()).equals(this.apiKey);
     }
 
     /**
@@ -120,9 +131,13 @@ public class LLMProcessor {
      * @return 可用模型 ID 列表；连接失败时返回 null
      */
     private List<String> fetchModelList() {
+        return this.fetchModelList(this.baseUrl, this.apiKey);
+    }
+
+    private List<String> fetchModelList(String targetBaseUrl, String targetApiKey) {
         HttpURLConnection connection = null;
         try {
-            connection = this.openModelsConnection();
+            connection = this.openModelsConnection(targetBaseUrl, targetApiKey);
             int statusCode = connection.getResponseCode();
             String responseBody = this.readResponseBody(connection, statusCode >= 400);
             if (statusCode >= 400) {
@@ -161,13 +176,13 @@ public class LLMProcessor {
      * @return HTTP 连接对象
      * @throws IOException 打开连接失败
      */
-    private HttpURLConnection openModelsConnection() throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) URI.create(this.baseUrl + "/v1/models").toURL().openConnection();
+    private HttpURLConnection openModelsConnection(String targetBaseUrl, String targetApiKey) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(targetBaseUrl + "/v1/models").toURL().openConnection();
         connection.setConnectTimeout(5_000);
         connection.setReadTimeout(10_000);
         connection.setRequestMethod("GET");
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("Authorization", "Bearer " + this.apiKey);
+        connection.setRequestProperty("Authorization", "Bearer " + targetApiKey);
         return connection;
     }
 
@@ -398,8 +413,8 @@ public class LLMProcessor {
      *
      * @return 当前模型服务返回的第一个模型 ID
      */
-    private String resolveFirstAvailableModel() {
-        List<String> availableModels = this.fetchModelList();
+    private String resolveFirstAvailableModel(String targetBaseUrl, String targetApiKey) {
+        List<String> availableModels = this.fetchModelList(targetBaseUrl, targetApiKey);
         if (availableModels == null || availableModels.isEmpty()) {
             throw new IllegalStateException("LLM model list is empty, cannot resolve default model from Platform config");
         }

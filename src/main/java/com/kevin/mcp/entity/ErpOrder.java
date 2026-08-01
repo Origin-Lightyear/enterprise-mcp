@@ -1,15 +1,21 @@
 package com.kevin.mcp.entity;
 
 import com.kevin.mcp.annotation.PrivateMcpToolParam;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
- * 表示 ERP 订单详情。
+ * 表示 ERP 订单详情。(演示用)
  *
  * @author Kevin
  * 2026/7/21
  */
+@Data
 @NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode
 @PrivateMcpToolParam(description = "ERP订单信息")
 public class ErpOrder {
     @PrivateMcpToolParam(description = "订单ID")
@@ -21,18 +27,6 @@ public class ErpOrder {
     @PrivateMcpToolParam(description = "客户地址")
     private String customerAddress;
 
-    /**
-     * 使用完整订单信息构建返回对象，避免模拟数据组装时依赖 Lombok 生成的全参构造器。
-     *
-     * @param orderId 订单ID
-     * @param customerName 客户名称
-     * @param customerAddress 客户地址
-     */
-    public ErpOrder(String orderId, String customerName, String customerAddress) {
-        this.orderId = orderId;
-        this.customerName = customerName;
-        this.customerAddress = customerAddress;
-    }
 
     /**
      * 返回订单ID，便于框架序列化结果对象。

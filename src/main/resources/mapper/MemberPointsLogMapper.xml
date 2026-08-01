@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kevin.mcp.mapper.MemberPointsLogMapper">
+
+    <!-- 映射数据库字段与实体属性 -->
+    <resultMap id="MemberPointsLogResultMap" type="com.kevin.mcp.entity.MemberPointsLog">
+        <id column="id" property="id"/>
+        <result column="member_id" property="memberId"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="points" property="points"/>
+        <result column="before_points" property="beforePoints"/>
+        <result column="after_points" property="afterPoints"/>
+        <result column="reason" property="reason"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- 复用基础查询列 -->
+    <sql id="Base_Column_List">
+        id,
+        member_id,
+        order_no,
+        points,
+        before_points,
+        after_points,
+        reason,
+        created_at
+    </sql>
+
+    <!-- 根据主键查询单条记录 -->
+    <select id="selectById" resultMap="MemberPointsLogResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM member_points_log
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按非空条件查询记录列表 -->
+    <select id="selectByCondition" resultMap="MemberPointsLogResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM member_points_log
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="memberId != null">
+                AND member_id = #{memberId}
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                AND order_no = #{orderNo}
+            </if>
+            <if test="points != null">
+                AND points = #{points}
+            </if>
+            <if test="beforePoints != null">
+                AND before_points = #{beforePoints}
+            </if>
+            <if test="afterPoints != null">
+                AND after_points = #{afterPoints}
+            </if>
+            <if test="reason != null and reason != ''">
+                AND reason = #{reason}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 按非空条件统计记录数量 -->
+    <select id="countByCondition" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM member_points_log
+        <where>
+            <if test="id != null">
+                AND id = #{id}
+            </if>
+            <if test="memberId != null">
+                AND member_id = #{memberId}
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                AND order_no = #{orderNo}
+            </if>
+            <if test="points != null">
+                AND points = #{points}
+            </if>
+            <if test="beforePoints != null">
+                AND before_points = #{beforePoints}
+            </if>
+            <if test="afterPoints != null">
+                AND after_points = #{afterPoints}
+            </if>
+            <if test="reason != null and reason != ''">
+                AND reason = #{reason}
+            </if>
+            <if test="createdAt != null">
+                AND created_at = #{createdAt}
+            </if>
+        </where>
+    </select>
+
+    <!-- 动态新增非空字段，主键回填到实体 -->
+    <insert id="insert" parameterType="com.kevin.mcp.entity.MemberPointsLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO member_points_log
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="memberId != null">
+                member_id,
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                order_no,
+            </if>
+            <if test="points != null">
+                points,
+            </if>
+            <if test="beforePoints != null">
+                before_points,
+            </if>
+            <if test="afterPoints != null">
+                after_points,
+            </if>
+            <if test="reason != null and reason != ''">
+                reason,
+            </if>
+            <if test="createdAt != null">
+                created_at,
+            </if>
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            <if test="memberId != null">
+                #{memberId},
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                #{orderNo},
+            </if>
+            <if test="points != null">
+                #{points},
+            </if>
+            <if test="beforePoints != null">
+                #{beforePoints},
+            </if>
+            <if test="afterPoints != null">
+                #{afterPoints},
+            </if>
+            <if test="reason != null and reason != ''">
+                #{reason},
+            </if>
+            <if test="createdAt != null">
+                #{createdAt},
+            </if>
+        </trim>
+    </insert>
+
+    <!-- 根据主键动态更新非空字段 -->
+    <update id="updateById" parameterType="com.kevin.mcp.entity.MemberPointsLog">
+        UPDATE member_points_log
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="memberId != null">
+                member_id = #{memberId},
+            </if>
+            <if test="orderNo != null and orderNo != ''">
+                order_no = #{orderNo},
+            </if>
+            <if test="points != null">
+                points = #{points},
+            </if>
+            <if test="beforePoints != null">
+                before_points = #{beforePoints},
+            </if>
+            <if test="afterPoints != null">
+                after_points = #{afterPoints},
+            </if>
+            <if test="reason != null and reason != ''">
+                reason = #{reason},
+            </if>
+            <if test="createdAt != null">
+                created_at = #{createdAt},
+            </if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据主键删除单条记录 -->
+    <delete id="deleteById">
+        DELETE FROM member_points_log
+        WHERE id = #{id}
+    </delete>
+</mapper>
