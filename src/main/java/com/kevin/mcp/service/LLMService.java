@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.text.MessageFormat;
+import java.util.regex.Pattern;
 
 /**
  * 协调 LLM 规划结果与内部方法执行。
@@ -20,6 +21,8 @@ import java.text.MessageFormat;
 public class LLMService {
 
     private static final Logger log = LoggerFactory.getLogger(LLMService.class);
+    // 匹配空白字符
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
     private final LLMProcessor llmProcessor;
     private final PrivateMcpToolSchemaRegistry privateMcpToolSchemaRegistry;
@@ -46,7 +49,7 @@ public class LLMService {
         String planningSchemas = GsonUtil.toJson(this.privateMcpToolSchemaRegistry.getPlanningSchemas());
         String queryMsg = MessageFormat.format(PromptContext.QUERY, userPrompt, planningSchemas, PromptContext.OUTPUT_SCHEMA);
         log.debug("LLM 用户意图: {} 构建请求: {}", userPrompt, queryMsg);
-        String result = llmProcessor.chat(queryMsg);
+        String result = llmProcessor.chat(WHITESPACE_PATTERN.matcher(queryMsg).replaceAll(""));
         log.debug("LLM 用户意图: {} 返回: {}", userPrompt, result);
         return result;
     }

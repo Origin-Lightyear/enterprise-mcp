@@ -87,6 +87,12 @@ public class CommonInternalTool {
             // 生成执行计划
             var executionPlan = jsonPlanParser.parse(result);
 
+            // 模型已明确声明无法生成可执行计划时，直接返回错误结果，避免继续进入执行器。
+            if (executionPlan.hasError()) {
+                log.info("LLM returned non-executable plan, intent: {}, error: {}", executionPlan.intent(), executionPlan.error());
+                return GsonUtil.toJson(executionPlan);
+            }
+
             // 权限审查
             PermissionReviewResult reviewResult = permissionReviewService.review(message, executionPlan, employeeAuth.permissionConfig());
 
@@ -106,7 +112,7 @@ public class CommonInternalTool {
 
             // 敏感数据处理
             Object maskedResult = permissionReviewService.maskFinalResult(executionResult.finalResult(), reviewResult);
-            return GsonUtil.toJson(maskedResult);
+            return GsonUtil.toJson(executionResult);
         } catch (Exception exception) {
             log.error("MCP SelectAll Error: {}", exception.getMessage());
             return "查询失败, 请联系管理员查看日志";

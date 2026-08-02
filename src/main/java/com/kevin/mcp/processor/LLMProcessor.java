@@ -290,8 +290,10 @@ public class LLMProcessor {
         payload.put("model", modelName == null || modelName.isBlank() ? this.model : modelName.trim());
         payload.put("stream", stream);
         payload.put("temperature", temperature == null ? BigDecimal.valueOf(0.7D) : temperature);
-        payload.put("enable_thinking", false);
-        payload.put("chat_template_kwargs", Map.of("enable_thinking", enableThinking));
+        if (!enableThinking) {
+            payload.put("thinking", Map.of("type", "disabled"));
+        }
+
 
         List<Map<String, String>> messages;
         if (systemPrompt == null || systemPrompt.isBlank()) {
