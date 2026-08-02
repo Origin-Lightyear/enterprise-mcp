@@ -49,6 +49,7 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
     public void afterSingletonsInstantiated() {
         LinkedHashMap<String, PrivateMcpToolSchemaDescriptor> discoveredDescriptors = new LinkedHashMap<>();
         LinkedHashMap<String, Method> discoveredMethods = new LinkedHashMap<>();
+        int i = 0;
         for (String beanName : this.applicationContext.getBeanDefinitionNames()) {
             Object bean = this.applicationContext.getBean(beanName);
             Class<?> targetClass = AopUtils.getTargetClass(bean);
@@ -57,7 +58,9 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
                     method -> registerToolMethod(discoveredDescriptors, discoveredMethods, beanName, targetClass, method),
                     method -> AnnotatedElementUtils.hasAnnotation(method, PrivateMcpTool.class)
             );
+            i++;
         }
+        log.info("注册内部MCPTool 数量: {} 个", i);
         this.schemaDescriptorsByMethodKey = Collections.unmodifiableMap(discoveredDescriptors);
         this.methodsByMethodKey = Collections.unmodifiableMap(discoveredMethods);
     }
@@ -205,7 +208,7 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
                 PrivateMcpToolJsonSchemaGenerator.generateMethodInputSchema(method),
                 outputSchema
         );
-        log.info("注册内部MCPTool: {}", GsonUtil.toJson(descriptor));
+
         PrivateMcpToolSchemaDescriptor previousDescriptor = discoveredDescriptors.putIfAbsent(methodKey, descriptor);
         if (previousDescriptor != null) {
             throw new IllegalStateException("Duplicate @PrivateMcpTool method key detected: " + methodKey);

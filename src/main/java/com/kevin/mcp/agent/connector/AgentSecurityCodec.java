@@ -22,14 +22,9 @@ import java.util.Base64;
 @Component
 public class AgentSecurityCodec {
     /** 公钥 PEM 文本 */
-    private static final String AGENT_PUBLIC_KEY_PEM = """
-            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWLTj4ShHWRh0Qr01CuWli7tnfAOyRaE4TSiuAdm09yjoMn23XH1ien22vwg+
-            yQoW4AJsMF2mMiMOx4IyeVPAZYebLakY9tSu0/dzHWcEH5XJY5SjdVKux46Yr9a3GbkLQircdb9GjMMvVcwY0EAE4IVbS1JVVQlNaVEB8kJ+
-            CUefoijIhDELx4vgbrlLtrlhiLC3na2Yw4RDBnxPPooD5dNN3beZI0vtams1ENdkavLkQ02tQuaFnS7zlBYT0Cmh9GzMlSZKJMBlMDIf0EVMV49BTkvSa2to5rES2Kf8Y+
-            nZAiph3aKLYIRRIHgh+GOs/sLG+lHD6OhW6mNv1UPPwIDAQAB
-            """;
+    private static final String AGENT_PUBLIC_KEY_PEM = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArxp+TtiRRZtX3ypCVN/sBvcHmlrFpwS6AXhh0muU1Yn1xz62x0iL8JXFKKdmR9Fk4dbD5TmyfgA26tUKZw873dMrAHX8EWBAoPbMngwroWXi1Zw33O48RR39rrjigw/dxuZHuy9qxrkxdOysY4FToppjFw2Ij2mRnZ3RnzhXq13jAND3yJnwCdvoPhLfImZX9evNG61hNeTAODYyTq09kkW87UA0rLG8DbIvi52UjI+BG5UZrGdBMcCEzgm4jLI6G6YmJIIW/DPk/s+S+TUqemtw9cLofzto1pZnN54zh32KNzAZN+0PUIAXMg0qvn9xakQBb4fD0BI8eP3nBbbevwIDAQAB";
     /** 预期公钥指纹 */
-    private static final String AGENT_PUBLIC_KEY_FINGERPRINT = "5da5bbc3c8bd765387941d13a76359d0f20767d258c6130926699c65d4b5419a";
+    private static final String AGENT_PUBLIC_KEY_FINGERPRINT = "085d065ef72e497cc571ce3e5d17ddc9d1442ac36e24f50e792c2d966b6a8633";
 
     private final PublicKey publicKey;
 

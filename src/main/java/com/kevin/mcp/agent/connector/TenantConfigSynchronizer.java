@@ -72,22 +72,25 @@ public class TenantConfigSynchronizer {
      */
     public synchronized boolean synchronizeSafely() {
         try {
+            log.debug("开始同步配置，tenantId: {}", this.tenantId);
             TenantConfig latestConfig = this.agentServerClient.fetchTenantConfig(this.tenantId);
+            log.debug("已获取配置: {}", latestConfig);
             this.validateTenant(latestConfig);
             TenantConfig previousConfig = this.tenantCacheService.getTenantConfig(this.tenantId);
 
             // 状态与有效期必须优先落缓存，确保禁用或到期租户立即在 HTTP 边界被拒绝。
             this.tenantCacheService.refreshTenantConfig(this.tenantId, latestConfig);
             if (this.shouldRefreshLlm(previousConfig, latestConfig)) {
+                log.info("开始初始化 LLM 配置: {}", latestConfig);
                 this.llmProcessor.refreshTenantConfig(latestConfig);
             }
             if (!Objects.equals(previousConfig, latestConfig)) {
-                log.info("已同步 Platform 租户配置，tenantId: {}，version: {}，status: {}，authEndTime: {}",
+                log.info("已同步配置，tenantId: {}，version: {}，status: {}，authEndTime: {}",
                         this.tenantId, latestConfig.version(), latestConfig.status(), latestConfig.authEndTime());
             }
             return true;
         } catch (RuntimeException exception) {
-            log.warn("同步 Platform 租户配置未完全成功，tenantId: {}，保留已验证的 LLM 连接并等待重试: {}",
+            log.warn("同步配置未完全成功，tenantId: {}，保留已验证的 LLM 连接并等待重试: {}",
                     this.tenantId, exception.getMessage());
             return false;
         }
