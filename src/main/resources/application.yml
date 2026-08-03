@@ -3,8 +3,8 @@ server:
 
 # Agent配置
 saas:
-  saas-server: http://39.105.57.219:8001
-  tenant-server: http://39.105.57.219:8002
+  saas-server: http://127.0.0.1:8001
+  tenant-server: http://127.0.0.1:8002
   tenant-id: 10000
   # Platform 使用本地时间返回授权截止时间，MCPServer 按同一业务时区判断是否到期。
   tenant-zone: Asia/Shanghai
@@ -31,9 +31,9 @@ spring:
   application:
     name: enterprise-mcp
   datasource:
-    url: jdbc:mysql://39.105.57.219:3306/retail_erp_demo?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://127.0.0.1:3306/retail_erp_demo?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
-    password: root123
+    password: 123456
     druid:
       # ========== 连接池容量（高并发核心） ==========
       initial-size: 4

@@ -112,7 +112,7 @@ public class CommonInternalTool {
 
             // 敏感数据处理
             Object maskedResult = permissionReviewService.maskFinalResult(executionResult.finalResult(), reviewResult);
-            return GsonUtil.toJson(executionResult);
+            return GsonUtil.toJson(maskedResult);
         } catch (Exception exception) {
             log.error("MCP SelectAll Error: {}", exception.getMessage());
             return "查询失败, 请联系管理员查看日志";
