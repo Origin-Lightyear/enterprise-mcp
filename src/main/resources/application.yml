@@ -17,6 +17,11 @@ saas:
     # Platform/Tenant 网络异常时快速释放轮询线程和请求线程。
     connect-timeout: 3s
     read-timeout: 10s
+  employee-llm-config-cache:
+    # 员工密钥变更最多延迟该时长生效；过期刷新失败时不沿用旧密钥。
+    ttl: 5m
+    # 限制本地敏感配置数量，避免大量离散员工请求造成内存持续增长。
+    maximum-size: 10000
   verify:
     timestamp-skew-seconds: 300
     nonce-ttl-seconds: 300

@@ -32,7 +32,7 @@ class TenantCacheServiceTest {
     @Test
     void shouldRejectDisabledTenant() {
         this.tenantCacheService.refreshTenantConfig("10000",
-                new TenantConfig(10000L, "key", "http://llm", 2, LocalDateTime.now().plusDays(1), 2));
+                new TenantConfig(10000L, 2, LocalDateTime.now().plusDays(1), 2));
 
         assertThat(this.tenantCacheService.getTenantAvailability("10000"))
                 .isEqualTo(TenantAvailability.DISABLED);
@@ -44,7 +44,7 @@ class TenantCacheServiceTest {
     @Test
     void shouldRejectExpiredTenant() {
         this.tenantCacheService.refreshTenantConfig("10000",
-                new TenantConfig(10000L, "key", "http://llm", 1, LocalDateTime.now().minusSeconds(1), 3));
+                new TenantConfig(10000L, 1, LocalDateTime.now().minusSeconds(1), 3));
 
         assertThat(this.tenantCacheService.getTenantAvailability("10000"))
                 .isEqualTo(TenantAvailability.EXPIRED);

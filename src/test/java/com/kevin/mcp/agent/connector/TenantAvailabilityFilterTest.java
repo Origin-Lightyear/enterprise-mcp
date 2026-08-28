@@ -59,7 +59,7 @@ class TenantAvailabilityFilterTest {
     @Test
     void shouldReturnForbiddenForDisabledTenant() throws Exception {
         this.tenantCacheService.refreshTenantConfig("10000",
-                new TenantConfig(10000L, "key", "http://llm", 2, LocalDateTime.now().plusDays(1), 2));
+                new TenantConfig(10000L, 2, LocalDateTime.now().plusDays(1), 2));
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
@@ -78,7 +78,7 @@ class TenantAvailabilityFilterTest {
     @Test
     void shouldAllowAvailableTenant() throws Exception {
         this.tenantCacheService.refreshTenantConfig("10000",
-                new TenantConfig(10000L, "key", "http://llm", 1, LocalDateTime.now().plusDays(1), 1));
+                new TenantConfig(10000L, 1, LocalDateTime.now().plusDays(1), 1));
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);

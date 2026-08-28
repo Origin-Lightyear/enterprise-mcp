@@ -8,7 +8,7 @@ import java.util.Base64;
 import java.util.UUID;
 
 /**
- * 演示如何构建 {@code verifySourceAndGetAuth} 所需的正确请求头。
+ * 演示如何构建 {@code verifySourceAndGetEmployee} 所需的正确请求头。
  *
  * <p>鉴权 header 共四个：
  * <ol>

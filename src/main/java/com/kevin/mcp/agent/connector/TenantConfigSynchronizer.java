@@ -1,7 +1,6 @@
 package com.kevin.mcp.agent.connector;
 
 import com.kevin.mcp.agent.connector.entity.TenantConfig;
-import com.kevin.mcp.processor.LLMProcessor;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.util.Objects;
 
 /**
- * 轮询 Platform 租户配置，并将租户状态和 LLM 连接变更同步到 MCPServer。
+ * 轮询 Platform 租户配置，并将租户状态与授权期限同步到 MCPServer。
  *
  * @author Kevin
  * @date 2026-08-01
@@ -23,7 +22,6 @@ public class TenantConfigSynchronizer {
 
     private final HttpAgentServerClient agentServerClient;
     private final TenantCacheService tenantCacheService;
-    private final LLMProcessor llmProcessor;
     private final String tenantId;
 
     /**
@@ -31,18 +29,15 @@ public class TenantConfigSynchronizer {
      *
      * @param agentServerClient Platform 与 Tenant 服务客户端
      * @param tenantCacheService 租户缓存服务
-     * @param llmProcessor LLM 处理器
      * @param tenantId 当前 MCPServer 绑定的租户
      */
     public TenantConfigSynchronizer(
             HttpAgentServerClient agentServerClient,
             TenantCacheService tenantCacheService,
-            LLMProcessor llmProcessor,
             @Value("${saas.tenant-id}") String tenantId
     ) {
         this.agentServerClient = agentServerClient;
         this.tenantCacheService = tenantCacheService;
-        this.llmProcessor = llmProcessor;
         this.tenantId = tenantId;
     }
 
@@ -80,30 +75,16 @@ public class TenantConfigSynchronizer {
 
             // 状态与有效期必须优先落缓存，确保禁用或到期租户立即在 HTTP 边界被拒绝。
             this.tenantCacheService.refreshTenantConfig(this.tenantId, latestConfig);
-            if (this.shouldRefreshLlm(previousConfig, latestConfig)) {
-                log.info("开始初始化 LLM 配置: {}", latestConfig);
-                this.llmProcessor.refreshTenantConfig(latestConfig);
-            }
             if (!Objects.equals(previousConfig, latestConfig)) {
                 log.info("已同步配置，tenantId: {}，version: {}，status: {}，authEndTime: {}",
                         this.tenantId, latestConfig.version(), latestConfig.status(), latestConfig.authEndTime());
             }
             return true;
         } catch (RuntimeException exception) {
-            log.warn("同步配置未完全成功，tenantId: {}，保留已验证的 LLM 连接并等待重试: {}",
+            log.warn("同步租户配置失败，tenantId: {}，保留上次有效状态并等待重试: {}",
                     this.tenantId, exception.getMessage());
             return false;
         }
-    }
-
-    private boolean shouldRefreshLlm(TenantConfig previousConfig, TenantConfig latestConfig) {
-        if (TenantAvailability.AVAILABLE != this.tenantCacheService.getTenantAvailability(this.tenantId)) {
-            return false;
-        }
-        return previousConfig == null
-                || !Objects.equals(previousConfig.llmUrl(), latestConfig.llmUrl())
-                || !Objects.equals(previousConfig.llmKey(), latestConfig.llmKey())
-                || !this.llmProcessor.isTenantConfigApplied(latestConfig);
     }
 
     private void validateTenant(TenantConfig tenantConfig) {

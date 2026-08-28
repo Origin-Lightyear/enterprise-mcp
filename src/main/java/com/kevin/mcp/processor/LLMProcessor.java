@@ -1,9 +1,8 @@
 package com.kevin.mcp.processor;
 
 import com.google.gson.reflect.TypeToken;
-import com.kevin.mcp.agent.connector.entity.TenantConfig;
+import com.kevin.mcp.agent.connector.entity.EmployeeLlmConfig;
 import com.kevin.mcp.util.GsonUtil;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -22,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 处理大模型请求，并强制使用 Platform 下发的租户模型配置完成初始化。
+ * 处理大模型请求，并支持按单次 MCP 请求使用员工专属配置隔离访问凭证。
  *
  * @author Kevin
  * @date 2026-07-20
@@ -33,107 +32,12 @@ public class LLMProcessor {
     private static final Logger log = LoggerFactory.getLogger(LLMProcessor.class);
 
     /**
-     * 保存当前租户生效的大模型服务地址。
-     */
-    private volatile String baseUrl = "";
-
-    /**
-     * 保存当前租户生效的默认模型名称。
-     */
-    private volatile String model = "";
-
-    /**
-     * 保存当前租户生效的系统提示词模板。
-     */
-    private volatile String prompt = "";
-
-    /**
-     * 保存当前租户生效的访问密钥。
-     */
-    private volatile String apiKey = "";
-
-    /**
-     * 标记是否已经完成基于 Platform 租户配置的初始化，避免在配置未就绪时误发请求。
-     */
-    private volatile boolean initialized;
-
-    /**
-     * 记录组件创建完成。真正的模型初始化必须等待 Platform 租户配置下发。
-     */
-    @PostConstruct
-    private void init() {
-        log.info("LLMProcessor 已创建，等待 Platform 租户配置初始化");
-    }
-
-    /**
-     * 使用租户配置刷新运行期 LLM 地址、模型和密钥。
-     * Platform 当前不返回模型名称，因此在地址和密钥就绪后主动查询模型列表并取第一个可用模型。
+     * 查询指定员工可访问的模型列表，兼容 OpenAI 风格的 GET /v1/models。
      *
-     * @param tenantConfig 当前租户配置快照
-     */
-    public synchronized void refreshTenantConfig(TenantConfig tenantConfig) {
-        if (tenantConfig == null) {
-            throw new IllegalStateException("Platform tenant config is null");
-        }
-        String tenantBaseUrl = this.normalizeBaseUrl(this.requireText(tenantConfig.llmUrl(), "llmUrl"));
-        String tenantApiKey = this.normalizeText(this.requireText(tenantConfig.llmKey(), "llmKey"));
-        String tenantModel = this.resolveFirstAvailableModel(tenantBaseUrl, tenantApiKey);
-        boolean changed = !tenantBaseUrl.equals(this.baseUrl)
-                || !tenantApiKey.equals(this.apiKey)
-                || !tenantModel.equals(this.model)
-                || !this.initialized;
-
-        // 候选连接验证成功后再整体发布，避免业务线程观察到地址、密钥和模型不匹配的中间状态。
-        this.baseUrl = tenantBaseUrl;
-        this.apiKey = tenantApiKey;
-        this.model = tenantModel;
-        this.prompt = "";
-        this.initialized = true;
-
-        if (!changed) {
-            return;
-        }
-        log.info("已按租户配置刷新 LLM 连接信息，当前 url: {}, model: {}", this.baseUrl, this.model);
-        this.performStartupHealthCheck();
-    }
-
-    /**
-     * 判断指定 Platform 配置是否已经应用到当前 LLM 连接。
-     *
-     * @param tenantConfig Platform 租户配置
-     * @return 地址和密钥是否已成功应用
-     */
-    public boolean isTenantConfigApplied(TenantConfig tenantConfig) {
-        if (tenantConfig == null || !this.initialized) {
-            return false;
-        }
-        return this.normalizeBaseUrl(tenantConfig.llmUrl()).equals(this.baseUrl)
-                && this.normalizeText(tenantConfig.llmKey()).equals(this.apiKey);
-    }
-
-    /**
-     * 启动或配置刷新后执行健康检查，只记录日志，不阻断调用方自定义异常处理。
-     */
-    private void performStartupHealthCheck() {
-        this.ensureInitialized();
-        List<String> availableModels = this.fetchModelList();
-        if (availableModels == null) {
-            log.warn("LLM 健康检查失败：无法连接大模型服务 {}", this.baseUrl);
-            return;
-        }
-        log.info("LLM 连接正常，服务 {} 可用模型共 {} 个: {}", this.baseUrl, availableModels.size(), availableModels);
-        this.verifyModelAvailability(availableModels);
-    }
-
-    /**
-     * 查询大模型服务的模型列表，兼容 OpenAI 风格的 GET /v1/models。
-     *
+     * @param targetBaseUrl 员工 NewAPI 基础地址
+     * @param targetApiKey 员工专属 API Key
      * @return 可用模型 ID 列表；连接失败时返回 null
      */
-    private List<String> fetchModelList() {
-        return this.fetchModelList(this.baseUrl, this.apiKey);
-    }
-
     private List<String> fetchModelList(String targetBaseUrl, String targetApiKey) {
         HttpURLConnection connection = null;
         try {
@@ -171,8 +75,10 @@ public class LLMProcessor {
     }
 
     /**
-     * 打开模型列表接口连接。健康检查使用较短超时，避免刷新配置时长时间阻塞。
+     * 打开模型列表接口连接。配置加载使用较短超时，避免缓存刷新长时间阻塞。
      *
+     * @param targetBaseUrl 员工 NewAPI 基础地址
+     * @param targetApiKey 员工专属 API Key
      * @return HTTP 连接对象
      * @throws IOException 打开连接失败
      */
@@ -187,88 +93,60 @@ public class LLMProcessor {
     }
 
     /**
-     * 校验当前默认模型是否存在于模型服务返回列表中。
-     *
-     * @param availableModels 模型服务可用模型列表
-     */
-    private void verifyModelAvailability(List<String> availableModels) {
-        if (availableModels.contains(this.model)) {
-            log.info("LLM 模型校验通过：配置模型 {} 存在于可用列表中", this.model);
-            return;
-        }
-        log.warn("LLM 模型校验未通过：配置模型 {} 不在可用列表中，可用模型: {}", this.model, availableModels);
-    }
-
-    /**
      * 打开聊天补全接口连接并设置通用请求头。
      *
+     * @param invocationConfig 本次请求的员工 LLM 调用配置
      * @param accept 响应内容类型
      * @return HTTP 连接对象
      * @throws IOException 打开连接失败
      */
-    private HttpURLConnection openChatConnection(String accept) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) URI.create(this.baseUrl + "/v1/chat/completions").toURL().openConnection();
+    private HttpURLConnection openChatConnection(LlmInvocationConfig invocationConfig, String accept) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(invocationConfig.baseUrl() + "/v1/chat/completions").toURL().openConnection();
         connection.setConnectTimeout(15_000);
         connection.setReadTimeout(300_000);
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
         connection.setRequestProperty("Accept", accept);
-        connection.setRequestProperty("Authorization", "Bearer " + this.apiKey);
+        connection.setRequestProperty("Authorization", "Bearer " + invocationConfig.apiKey());
         return connection;
     }
 
     /**
-     * 使用默认模型执行一次普通非流式对话。
+     * 校验员工 LLM 配置并解析默认模型，生成可在单次 MCP 请求内安全复用的不可变配置。
      *
+     * @param employeeConfig Platform 返回的员工 LLM 配置
+     * @return 已归一化地址并解析默认模型的调用配置
+     */
+    public LlmInvocationConfig prepareInvocationConfig(EmployeeLlmConfig employeeConfig) {
+        if (employeeConfig == null) {
+            throw new IllegalStateException("Platform employee LLM config is null");
+        }
+        String employeeBaseUrl = this.normalizeBaseUrl(this.requireText(employeeConfig.newapiUrl(), "newapiUrl"));
+        String employeeApiKey = this.normalizeText(this.requireText(employeeConfig.apiKey(), "apiKey"));
+        String employeeModel = this.resolveFirstAvailableModel(employeeBaseUrl, employeeApiKey);
+        return new LlmInvocationConfig(employeeBaseUrl, employeeApiKey, employeeModel);
+    }
+
+    /**
+     * 使用员工专属配置执行一次普通非流式对话，调用期间不读取全局租户密钥。
+     *
+     * @param invocationConfig 本次 MCP 请求的员工 LLM 调用配置
      * @param userPrompt 用户输入内容
      * @return 模型返回文本
      * @throws IOException 请求失败
      */
-    public String chat(String userPrompt) throws IOException {
-        return this.chat(this.model, this.prompt, userPrompt, BigDecimal.valueOf(0.7D), false);
+    public String chat(LlmInvocationConfig invocationConfig, String userPrompt) throws IOException {
+        this.requireInvocationConfig(invocationConfig);
+        return this.chat(invocationConfig, invocationConfig.model(), "", userPrompt, BigDecimal.valueOf(0.7D), false);
     }
 
-    /**
-     * 返回当前默认模型名称，供审计和日志复用。
-     *
-     * @return 默认模型名称
-     */
-    public String getModel() {
-        this.ensureInitialized();
-        return this.model;
-    }
-
-    /**
-     * 使用指定模型与提示词完成一次非流式对话。
-     *
-     * @param modelName 本次调用使用的模型名称
-     * @param systemPrompt 本次调用附带的系统提示词
-     * @param userPrompt 用户输入内容
-     * @param temperature 采样温度
-     * @param enableThinking 是否启用推理模式
-     * @return 模型返回文本
-     * @throws IOException 请求失败
-     */
-    public String chat(String modelName, String systemPrompt, String userPrompt, BigDecimal temperature,
-                       boolean enableThinking) throws IOException {
+    private String chat(LlmInvocationConfig invocationConfig, String modelName, String systemPrompt, String userPrompt,
+                        BigDecimal temperature, boolean enableThinking) throws IOException {
         Map<String, Object> payload = this.buildChatPayloadWithSystemPrompt(modelName, systemPrompt, userPrompt, false,
                 temperature, enableThinking);
-        Map<String, Object> response = this.executeChatCompletion(payload);
+        Map<String, Object> response = this.executeChatCompletion(invocationConfig, payload);
         return this.extractAssistantContent(response);
-    }
-
-    /**
-     * 使用默认模型并返回完整响应结构，供需要读取 usage 等字段的扩展场景使用。
-     *
-     * @param userPrompt 用户输入内容
-     * @return 大模型接口完整响应
-     * @throws IOException 请求失败
-     */
-    public Map<String, Object> chatForResponse(String userPrompt) throws IOException {
-        Map<String, Object> payload = this.buildChatPayloadWithSystemPrompt(this.model, this.prompt, userPrompt, false,
-                BigDecimal.valueOf(0.7D), false);
-        return this.executeChatCompletion(payload);
     }
 
     /**
@@ -285,9 +163,8 @@ public class LLMProcessor {
     private Map<String, Object> buildChatPayloadWithSystemPrompt(String modelName, String systemPrompt, String userPrompt,
                                                                  boolean stream, BigDecimal temperature,
                                                                  boolean enableThinking) {
-        this.ensureInitialized();
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("model", modelName == null || modelName.isBlank() ? this.model : modelName.trim());
+        payload.put("model", this.requireText(modelName, "model"));
         payload.put("stream", stream);
         payload.put("temperature", temperature == null ? BigDecimal.valueOf(0.7D) : temperature);
         if (!enableThinking) {
@@ -313,13 +190,15 @@ public class LLMProcessor {
     /**
      * 发送聊天补全请求，并统一解析响应 JSON。
      *
+     * @param invocationConfig 本次请求的员工 LLM 调用配置
      * @param payload 请求体
      * @return 响应结构
      * @throws IOException 请求失败
      */
-    private Map<String, Object> executeChatCompletion(Map<String, Object> payload) throws IOException {
-        this.ensureInitialized();
-        HttpURLConnection connection = this.openChatConnection("application/json");
+    private Map<String, Object> executeChatCompletion(LlmInvocationConfig invocationConfig,
+                                                      Map<String, Object> payload) throws IOException {
+        this.requireInvocationConfig(invocationConfig);
+        HttpURLConnection connection = this.openChatConnection(invocationConfig, "application/json");
         String requestJson = GsonUtil.toJson(payload);
         try {
             try (OutputStream outputStream = connection.getOutputStream()) {
@@ -401,24 +280,26 @@ public class LLMProcessor {
         }
     }
 
-    /**
-     * 确保当前处理器已经完成 Platform 配置初始化，避免在配置缺失时误发请求。
-     */
-    private void ensureInitialized() {
-        if (!this.initialized) {
-            throw new IllegalStateException("LLMProcessor has not been initialized from Platform tenant config");
+    private void requireInvocationConfig(LlmInvocationConfig invocationConfig) {
+        if (invocationConfig == null) {
+            throw new IllegalArgumentException("LLM invocation config is required");
         }
+        this.requireText(invocationConfig.baseUrl(), "baseUrl");
+        this.requireText(invocationConfig.apiKey(), "apiKey");
+        this.requireText(invocationConfig.model(), "model");
     }
 
     /**
-     * 当 Platform 未下发模型名时，主动从模型服务读取列表并选择第一个可用模型。
+     * 根据员工密钥主动读取模型列表并选择第一个可用模型。
      *
+     * @param targetBaseUrl 员工 NewAPI 基础地址
+     * @param targetApiKey 员工专属 API Key
      * @return 当前模型服务返回的第一个模型 ID
      */
     private String resolveFirstAvailableModel(String targetBaseUrl, String targetApiKey) {
         List<String> availableModels = this.fetchModelList(targetBaseUrl, targetApiKey);
         if (availableModels == null || availableModels.isEmpty()) {
-            throw new IllegalStateException("LLM model list is empty, cannot resolve default model from Platform config");
+            throw new IllegalStateException("Employee LLM model list is empty, cannot resolve default model");
         }
         return this.normalizeText(availableModels.getFirst());
     }
@@ -457,7 +338,7 @@ public class LLMProcessor {
     private String requireText(String text, String fieldLabel) {
         String normalized = this.normalizeText(text);
         if (normalized.isBlank()) {
-            throw new IllegalStateException("Platform tenant config missing required field: " + fieldLabel);
+            throw new IllegalStateException("LLM config missing required field: " + fieldLabel);
         }
         return normalized;
     }

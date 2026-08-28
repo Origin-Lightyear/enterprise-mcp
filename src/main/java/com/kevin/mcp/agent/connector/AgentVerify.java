@@ -52,12 +52,12 @@ public class AgentVerify {
     }
 
     /**
-     * 校验请求来源并返回当前员工鉴权快照，供后续执行计划权限审查复用。
+     * 校验请求来源并返回已验证的租户与员工身份，供 LLM 配置和权限审查复用。
      *
      * @param requestContext MCP 同步请求上下文
-     * @return 员工鉴权快照，校验失败时返回 null
+     * @return 已验证的员工身份，校验失败时返回 null
      */
-    public EmployeeAuth verifySourceAndGetAuth(McpSyncRequestContext requestContext) {
+    public VerifiedEmployee verifySourceAndGetEmployee(McpSyncRequestContext requestContext) {
         McpTransportContext context = requestContext.transportContext();
         // 提取请求头：签名凭证、租户标识、时间戳、随机数（防重放）
         String authorization = this.getHeader(context, "authorization");
@@ -122,7 +122,7 @@ public class AgentVerify {
         if (!this.tenantCacheService.isTenantRequestAllowed(requestInfo.tenantId(), requestInfo.employeeId())) {
             return null;
         }
-        return employeeAuth;
+        return new VerifiedEmployee(requestInfo.tenantId(), employeeAuth);
     }
 
     private String getHeader(McpTransportContext context, String key) {

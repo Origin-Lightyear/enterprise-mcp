@@ -1,6 +1,7 @@
 package com.kevin.mcp.agent.connector;
 
 import com.kevin.mcp.agent.connector.entity.EmployeeAuth;
+import com.kevin.mcp.agent.connector.entity.EmployeeLlmConfig;
 import com.kevin.mcp.agent.connector.entity.TenantConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -13,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 通过 HTTP 调用 Platform 与 Tenant 后端，拉取租户配置、员工鉴权和审计结果上报接口。
+ * 通过 HTTP 调用 Platform 与 Tenant 后端，拉取租户、员工鉴权、员工 LLM 配置并上报审计结果。
  *
  * @author Kevin
  * @date 2026-07-29
@@ -69,8 +70,6 @@ public class HttpAgentServerClient {
                 .body(Map.class), "tenant config");
         return new TenantConfig(
                 this.longValue(data.get("id")),
-                this.stringValue(data.get("llmKey")),
-                this.stringValue(data.get("llmUrl")),
                 this.integerValue(data.get("status")),
                 this.localDateTimeValue(data.get("authEndTime")),
                 this.integerValue(data.get("version"))
@@ -86,12 +85,35 @@ public class HttpAgentServerClient {
      */
     public EmployeeAuth fetchTenantAuth(String tenantId, String employeeId) {
         return this.tenantRestClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/tenant/auth")
+                .uri(uriBuilder -> uriBuilder.path("/api/v1/agent/inner/employee-permission")
                         .queryParam("tenantId", tenantId)
                         .queryParam("employeeId", employeeId)
                         .build())
                 .retrieve()
                 .body(EmployeeAuth.class);
+    }
+
+    /**
+     * 拉取指定员工的专属 LLM 配置，严格校验 Platform 通用响应结构。
+     *
+     * @param tenantId 租户标识
+     * @param employeeId 员工标识
+     * @return 员工专属 LLM 配置
+     */
+    public EmployeeLlmConfig fetchEmployeeLlmConfig(String tenantId, String employeeId) {
+        Map<String, Long> requestBody = Map.of(
+                "tenantId", Long.valueOf(tenantId),
+                "employeeId", Long.valueOf(employeeId)
+        );
+        Map<?, ?> data = this.readApiResult(this.tenantRestClient.post()
+                .uri("/api/v1/agent/inner/employee-llm-config")
+                .body(requestBody)
+                .retrieve()
+                .body(Map.class), "employee LLM config");
+        return new EmployeeLlmConfig(
+                this.stringValue(data.get("apiKey")),
+                this.stringValue(data.get("newapiUrl"))
+        );
     }
 
     /**
@@ -101,7 +123,7 @@ public class HttpAgentServerClient {
      */
     public void reportPermissionAudit(Map<String, Object> auditPayload) {
         this.tenantRestClient.post()
-                .uri("/tenant/permission-audit")
+                .uri("/api/v1/agent/inner/permission-audit")
                 .body(auditPayload)
                 .retrieve()
                 .toBodilessEntity();

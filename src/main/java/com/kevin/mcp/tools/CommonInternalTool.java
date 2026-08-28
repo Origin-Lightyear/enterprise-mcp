@@ -1,10 +1,13 @@
 package com.kevin.mcp.tools;
 
 import com.kevin.mcp.agent.connector.AgentVerify;
+import com.kevin.mcp.agent.connector.EmployeeLlmConfigService;
 import com.kevin.mcp.agent.connector.HttpAgentServerClient;
+import com.kevin.mcp.agent.connector.VerifiedEmployee;
 import com.kevin.mcp.agent.connector.entity.EmployeeAuth;
 import com.kevin.mcp.processor.JsonPlanExecutor;
 import com.kevin.mcp.processor.JsonPlanParser;
+import com.kevin.mcp.processor.LlmInvocationConfig;
 import com.kevin.mcp.processor.PermissionReviewResult;
 import com.kevin.mcp.processor.PermissionReviewService;
 import com.kevin.mcp.service.LLMService;
@@ -31,6 +34,7 @@ public class CommonInternalTool {
 
     private final AgentVerify agentVerify;
     private final LLMService llmService;
+    private final EmployeeLlmConfigService employeeLlmConfigService;
     private final JsonPlanParser jsonPlanParser;
     private final JsonPlanExecutor jsonPlanExecutor;
     private final PermissionReviewService permissionReviewService;
@@ -41,16 +45,19 @@ public class CommonInternalTool {
      *
      * @param agentVerify Agent 来源校验器
      * @param llmService 执行计划生成服务
+     * @param employeeLlmConfigService 员工专属 LLM 配置服务
      * @param jsonPlanParser 执行计划解析器
      * @param jsonPlanExecutor 执行计划执行器
      * @param permissionReviewService 权限审查服务
      * @param agentServerClient AgentServer 客户端
      */
-    public CommonInternalTool(AgentVerify agentVerify, LLMService llmService, JsonPlanParser jsonPlanParser,
+    public CommonInternalTool(AgentVerify agentVerify, LLMService llmService,
+                              EmployeeLlmConfigService employeeLlmConfigService, JsonPlanParser jsonPlanParser,
                               JsonPlanExecutor jsonPlanExecutor, PermissionReviewService permissionReviewService,
                               HttpAgentServerClient agentServerClient) {
         this.agentVerify = agentVerify;
         this.llmService = llmService;
+        this.employeeLlmConfigService = employeeLlmConfigService;
         this.jsonPlanParser = jsonPlanParser;
         this.jsonPlanExecutor = jsonPlanExecutor;
         this.permissionReviewService = permissionReviewService;
@@ -76,13 +83,18 @@ public class CommonInternalTool {
         log.debug("MCP SelectAll: {}", message);
         try {
             // 验证签名, 并获取员工权限信息
-            EmployeeAuth employeeAuth = agentVerify.verifySourceAndGetAuth(requestContext);
-            if (employeeAuth == null) {
+            VerifiedEmployee verifiedEmployee = agentVerify.verifySourceAndGetEmployee(requestContext);
+            if (verifiedEmployee == null) {
                 return "Unauthorized";
             }
+            EmployeeAuth employeeAuth = verifiedEmployee.employeeAuth();
 
-            // 调用LLM
-            String result = llmService.chat(message);
+            // 员工配置在鉴权通过后获取，避免未认证请求探测员工 LLM 配置。
+            LlmInvocationConfig invocationConfig = this.employeeLlmConfigService.getConfig(
+                    verifiedEmployee.tenantId(), employeeAuth.employeeId());
+
+            // 规划和权限审查复用同一份不可变配置，避免请求执行中途切换员工密钥。
+            String result = llmService.chat(message, invocationConfig);
 
             // 生成执行计划
             var executionPlan = jsonPlanParser.parse(result);
@@ -94,10 +106,12 @@ public class CommonInternalTool {
             }
 
             // 权限审查
-            PermissionReviewResult reviewResult = permissionReviewService.review(message, executionPlan, employeeAuth.permissionConfig());
+            PermissionReviewResult reviewResult = permissionReviewService.review(
+                    message, executionPlan, employeeAuth.permissionConfig(), invocationConfig);
 
             // 提交审计报告
-            reportAudit(message, executionPlan, reviewResult, employeeAuth.permissionConfig());
+            reportAudit(message, executionPlan, reviewResult, employeeAuth.permissionConfig(),
+                    verifiedEmployee.tenantId(), employeeAuth.employeeId(), invocationConfig.model());
 
             if (!"allow".equalsIgnoreCase(reviewResult.decision())) {
                 log.info("权限拒绝: {}", reviewResult.denyReason());
@@ -127,18 +141,22 @@ public class CommonInternalTool {
      * @param executionPlan 执行计划
      * @param reviewResult 权限审查结果
      * @param permissionConfig 员工权限配置
+     * @param tenantId 已验证的租户标识
+     * @param employeeId 已验证的员工标识
+     * @param model 本次请求使用的模型
      */
-    private void reportAudit(String message, Object executionPlan, PermissionReviewResult reviewResult, Map<String, Object> permissionConfig) {
+    private void reportAudit(String message, Object executionPlan, PermissionReviewResult reviewResult,
+                             Map<String, Object> permissionConfig, String tenantId, String employeeId, String model) {
         try {
             Map<String, Object> auditPayload = new LinkedHashMap<>();
-            auditPayload.put("tenantId", permissionConfig.get("tenantId"));
-            auditPayload.put("employeeId", permissionConfig.get("employeeId"));
+            auditPayload.put("tenantId", tenantId);
+            auditPayload.put("employeeId", employeeId);
             auditPayload.put("requestMessage", message);
             auditPayload.put("planSummary", executionPlan);
             auditPayload.put("reviewResult", reviewResult);
             auditPayload.put("decision", reviewResult.decision());
             auditPayload.put("matchedRules", reviewResult.matchedDenyRules());
-            auditPayload.put("modelVersion", llmService.getDefaultModel());
+            auditPayload.put("modelVersion", model);
             agentServerClient.reportPermissionAudit(auditPayload);
         } catch (Exception exception) {
             log.warn("report permission audit failed: {}", exception.getMessage());

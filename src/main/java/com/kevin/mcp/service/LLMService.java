@@ -2,6 +2,7 @@ package com.kevin.mcp.service;
 
 import com.kevin.mcp.context.PromptContext;
 import com.kevin.mcp.processor.LLMProcessor;
+import com.kevin.mcp.processor.LlmInvocationConfig;
 import com.kevin.mcp.registry.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.util.GsonUtil;
 import org.slf4j.Logger;
@@ -42,24 +43,17 @@ public class LLMService {
      * 生成内部方法调用执行计划。
      *
      * @param userPrompt 员工原始输入
+     * @param invocationConfig 当前员工的 LLM 调用配置
      * @return 执行计划 JSON
      * @throws Exception LLM 请求失败或计划生成失败
      */
-    public String chat(String userPrompt) throws Exception {
+    public String chat(String userPrompt, LlmInvocationConfig invocationConfig) throws Exception {
         String planningSchemas = GsonUtil.toJson(this.privateMcpToolSchemaRegistry.getPlanningSchemas());
         String queryMsg = MessageFormat.format(PromptContext.QUERY, userPrompt, planningSchemas, PromptContext.OUTPUT_SCHEMA);
         log.debug("LLM 用户意图: {} 构建请求: {}", userPrompt, queryMsg);
-        String result = llmProcessor.chat(WHITESPACE_PATTERN.matcher(queryMsg).replaceAll(""));
+        String result = llmProcessor.chat(invocationConfig, WHITESPACE_PATTERN.matcher(queryMsg).replaceAll(""));
         log.debug("LLM 用户意图: {} 返回: {}", userPrompt, result);
         return result;
     }
 
-    /**
-     * 获取当前规划链路使用的默认模型名称。
-     *
-     * @return 默认模型名称
-     */
-    public String getDefaultModel() {
-        return llmProcessor.getModel();
-    }
 }

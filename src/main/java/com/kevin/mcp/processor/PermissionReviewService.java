@@ -47,15 +47,17 @@ public class PermissionReviewService {
      * @param userMessage 员工原始消息
      * @param plan 执行计划
      * @param permissionConfig 当前员工有效权限快照
+     * @param invocationConfig 当前员工的 LLM 调用配置
      * @return 审查结果
      * @throws IOException LLM 请求异常
      */
-    public PermissionReviewResult review(String userMessage, JsonExecutionPlan plan, Map<String, Object> permissionConfig) throws IOException {
+    public PermissionReviewResult review(String userMessage, JsonExecutionPlan plan, Map<String, Object> permissionConfig,
+                                         LlmInvocationConfig invocationConfig) throws IOException {
         if (!hasRules(permissionConfig)) {
             return PermissionReviewResult.allow();
         }
         String prompt = buildPrompt(userMessage, plan, permissionConfig);
-        String rawResult = this.llmProcessor.chat(prompt);
+        String rawResult = this.llmProcessor.chat(invocationConfig, prompt);
         PermissionReviewResult result = GsonUtil.fromJson(extractJson(rawResult), REVIEW_RESULT_TYPE);
         if (result == null || result.uncertain()) {
             return new PermissionReviewResult("deny", "权限审查无法确认，已拒绝执行", List.of(), List.of(), true);
