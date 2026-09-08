@@ -1,0 +1,11 @@
+{
+  "platformMcpId": 20001,
+  "version": "1.0.0",
+  "jarName": "enterprise-mcp.jar",
+  "artifactSha256": "replace-with-the-jar-sha256",
+  "health": {
+    "type": "HTTP",
+    "path": "/",
+    "expectedStatus": 200
+  }
+}

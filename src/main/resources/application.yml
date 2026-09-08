@@ -1,6 +1,13 @@
 server:
   port: 6001
 
+enterprise:
+  # 每个实例独立配置，Tenant 后端调用升级入口时必须携带该 token。
+  instance-id: ${ENTERPRISE_MCP_INSTANCE_ID:}
+  upgrade:
+    token: ${ENTERPRISE_MCP_UPGRADE_TOKEN:}
+    command: ${ENTERPRISE_MCP_UPDATER_COMMAND:/usr/local/libexec/enterprise-mcp-updater.sh}
+
 # Agent配置
 saas:
   saas-server: http://127.0.0.1:8001
