@@ -1,0 +1,43 @@
+# Control Plane HTTP 服务配置。
+server:
+  # 云端服务监听端口；未配置环境变量时使用 7001。
+  port: ${ENTERPRISE_MCP_CONTROL_PLANE_PORT:7001}
+
+# Spring Boot 应用标识配置。
+spring:
+  application:
+    # Spring 应用名称，用于日志、监控和服务识别，通常无需修改。
+    name: enterprise-mcp-control-plane
+  # Control Plane 统一使用 MySQL 保存多客户目录和 Runtime 注册状态。
+  datasource:
+    # 本地默认连接 saas_mcp；生产环境必须通过环境变量覆盖地址和账号。
+    url: ${ENTERPRISE_MCP_DB_URL:jdbc:mysql://localhost:3306/saas_mcp?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${ENTERPRISE_MCP_DB_USERNAME:root}
+    # 密码禁止写入仓库，启动时必须由部署环境注入。
+    password: ${ENTERPRISE_MCP_DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    # 启动时校验并升级 Control Plane 自有表结构。
+    enabled: true
+    locations: classpath:db/migration
+
+# Enterprise MCP 云端业务配置。
+enterprise:
+  # Control Plane 的外部集成、缓存、签名和存储配置。
+  control-plane:
+    # Tenant 服务基础地址；生产必填，用于按 tenantId + employeeId 查询员工 LLM 配置。
+    tenant-service-base-url: ${ENTERPRISE_MCP_CONTROL_TENANT_SERVICE_BASE_URL:}
+    # Tenant 员工 LLM 配置接口路径；只有 Tenant 路由调整时才修改。
+    employee-llm-config-path: /api/v1/agent/inner/employee-llm-config
+    # 连接 Tenant 服务的最长等待时间，超时后本次规划失败关闭。
+    tenant-connect-timeout: ${ENTERPRISE_MCP_CONTROL_TENANT_CONNECT_TIMEOUT:5s}
+    # 读取 Tenant 员工配置响应的最长等待时间。
+    tenant-read-timeout: ${ENTERPRISE_MCP_CONTROL_TENANT_READ_TIMEOUT:15s}
+    # 员工 LLM 配置在云端内存中的硬过期时间；过期刷新失败时不会使用旧密钥。
+    employee-llm-config-cache-ttl: ${ENTERPRISE_MCP_CONTROL_EMPLOYEE_LLM_CONFIG_CACHE_TTL:5m}
+    # 员工 LLM 配置缓存最大条目数，缓存键由 tenantId + employeeId 组成。
+    employee-llm-config-cache-maximum-size: ${ENTERPRISE_MCP_CONTROL_EMPLOYEE_LLM_CONFIG_CACHE_MAXIMUM_SIZE:10000}
+    # 连接员工 NewAPI 的最长等待时间，适用于模型列表和规划请求。
+    llm-connect-timeout: ${ENTERPRISE_MCP_CONTROL_LLM_CONNECT_TIMEOUT:15s}
+    # 读取员工 NewAPI 规划响应的最长等待时间；复杂规划可按模型性能调整。
+    llm-read-timeout: ${ENTERPRISE_MCP_CONTROL_LLM_READ_TIMEOUT:5m}

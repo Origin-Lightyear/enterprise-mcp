@@ -47,6 +47,8 @@ if [[ -n "$PACKAGE_FILE" || -n "$DOWNLOAD_URL" ]]; then
   MANIFEST="$TMP_DIR/manifest.json"; [[ -f "$MANIFEST" ]] || { echo "安装包缺少 manifest.json" >&2; exit 1; }
   MCP_ID="$(jq -er '.platformMcpId | tostring' "$MANIFEST")"; VERSION="$(jq -er '.version' "$MANIFEST")"; JAR_NAME="$(jq -er '.jarName' "$MANIFEST")"; ARTIFACT_SHA256="$(jq -er '.artifactSha256' "$MANIFEST")"; HEALTH_TYPE="$(jq -er '.health.type' "$MANIFEST")"; HEALTH_PATH="$(jq -er '.health.path' "$MANIFEST")"; EXPECTED_STATUS="$(jq -er '.health.expectedStatus // 200' "$MANIFEST")"
   EXPECTED_MCP_ID="$(awk -F= '/^platform\.mcp\.id=/{print $2}' "$ETC_DIR/$INSTANCE_ID/instance.properties" 2>/dev/null || true)"
+  MANIFEST_INSTANCE_ID="$(jq -er '.instanceId // empty' "$MANIFEST")"
+  [[ -z "$MANIFEST_INSTANCE_ID" || "$MANIFEST_INSTANCE_ID" == "$INSTANCE_ID" ]] || { echo "manifest 实例编号不匹配实例" >&2; exit 1; }
   [[ -n "$EXPECTED_MCP_ID" && "$MCP_ID" == "$EXPECTED_MCP_ID" ]] || { echo "manifest MCP 主键不匹配实例" >&2; exit 1; }
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$JAR_NAME" != */* && "$JAR_NAME" != *..* ]] || { echo "manifest 身份字段非法" >&2; exit 1; }
   [[ "$JAR_NAME" == "$CURRENT_JAR_NAME" ]] || { echo "不同版本必须使用相同 jarName" >&2; exit 1; }

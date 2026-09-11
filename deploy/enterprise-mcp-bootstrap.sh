@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 usage() {
-  echo "用法: $0 --instance-id ID --platform-mcp-id ID --tenant-id ID --package FILE --config FILE" >&2
+  echo "用法: $0 [--instance-id ID] --platform-mcp-id ID --tenant-id ID --package FILE --config FILE" >&2
   exit 2
 }
 
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ $EUID -eq 0 ]] || { echo "必须使用 root 执行" >&2; exit 1; }
-[[ -n "$INSTANCE_ID" && "$INSTANCE_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || usage
+[[ -z "$INSTANCE_ID" || "$INSTANCE_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || usage
 [[ -n "$PLATFORM_MCP_ID" && "$PLATFORM_MCP_ID" =~ ^[0-9]+$ ]] || usage
 [[ -n "$TENANT_ID" && "$TENANT_ID" =~ ^[0-9]+$ ]] || usage
 [[ -f "$PACKAGE_FILE" && -f "$CONFIG_FILE" ]] || usage
@@ -57,9 +57,17 @@ tar -xzf "$PACKAGE_FILE" -C "$TMP_DIR"
 MANIFEST="$TMP_DIR/manifest.json"
 [[ -f "$MANIFEST" ]] || { echo "安装包缺少 manifest.json" >&2; exit 1; }
 MANIFEST_MCP_ID="$(jq -er '.platformMcpId | tostring' "$MANIFEST")"
+MANIFEST_INSTANCE_ID="$(jq -er '.instanceId' "$MANIFEST")"
+if [[ -n "$INSTANCE_ID" && "$INSTANCE_ID" != "$MANIFEST_INSTANCE_ID" ]]; then
+  echo "命令行实例编号与 manifest 不匹配" >&2
+  exit 1
+fi
+[[ -n "$INSTANCE_ID" ]] || INSTANCE_ID="$MANIFEST_INSTANCE_ID"
+[[ -n "$INSTANCE_ID" && "$INSTANCE_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || usage
 VERSION="$(jq -er '.version' "$MANIFEST")"
 JAR_NAME="$(jq -er '.jarName' "$MANIFEST")"
 [[ "$MANIFEST_MCP_ID" == "$PLATFORM_MCP_ID" ]] || { echo "manifest MCP 主键不匹配" >&2; exit 1; }
+[[ "$INSTANCE_ID" == "$MANIFEST_INSTANCE_ID" ]] || { echo "manifest 实例编号不匹配" >&2; exit 1; }
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "manifest 版本号非法" >&2; exit 1; }
 [[ "$JAR_NAME" != */* && "$JAR_NAME" != *..* ]] || { echo "manifest jarName 非法" >&2; exit 1; }
 JAR_FILE="$TMP_DIR/$JAR_NAME"
@@ -91,7 +99,7 @@ Wants=network-online.target
 User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTANCE_ROOT
-ExecStart=/usr/bin/java -jar $CURRENT_LINK/$JAR_NAME --spring.config.additional-location=file:$ETC_DIR/$INSTANCE_ID/application.yml
+ExecStart=/usr/bin/java -jar $CURRENT_LINK/$JAR_NAME --spring.config.additional-location=file:$ETC_DIR/$INSTANCE_ID/application.yml --enterprise.runtime.tenant-id=$TENANT_ID --enterprise.runtime.instance-id=$INSTANCE_ID
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

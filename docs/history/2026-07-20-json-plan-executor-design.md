@@ -1,0 +1,144 @@
+# JSON Plan Executor Design
+
+**Goal:** 在 `LLMService` 生成调用计划 JSON 后，由程序解析协议、解析步骤依赖、按顺序调用已注册的内部 Spring Bean 方法，并返回最终执行结果。
+
+**Background**
+
+当前 [LLMService.java](/D:/Codes/mcp-project/src/main/java/com/kevin/mcp/service/LLMService.java:24) 已经会把 `PrivateMcpToolSchemaRegistry` 中的可调用方法描述发给模型，并要求模型按固定 JSON Schema 返回调用计划。现状停留在日志打印阶段，`// TODO 解析结果调用方法` 尚未落地，因此业务链路无法从模型计划真正执行到内部工具方法。
+
+**Scope**
+
+- 新增内部协议模型，承载计划、步骤、引用表达式与执行结果。
+- 新增内部解析器，将 LLM 返回字符串解析为协议对象并做基础校验。
+- 新增内部执行器，基于 `methodKey` 从 `PrivateMcpToolSchemaRegistry` 找到目标 Bean 和 Method，并执行步骤。
+- 支持字面量参数与 `{"$ref":"stepId.fieldPath"}` 形式的引用参数。
+- 在 `LLMService.chat` 中接入解析与执行流程，返回执行结果而不是写死对象。
+
+**Out of Scope**
+
+- 不新增 HTTP 接口。
+- 不改造 `PrivateMcpTool` 注解协议。
+- 不支持集合索引、复杂表达式或跨计划变量作用域。
+- 不处理并发执行，所有步骤均串行执行。
+
+**Architecture**
+
+实现拆为三层：
+
+1. `JsonPlanParser`
+   - 输入：LLM 原始字符串
+   - 输出：结构化 `JsonExecutionPlan`
+   - 职责：JSON 反序列化、必填字段校验、`stepId` 去重、`dependsOn` 完整性校验、引用格式初校验
+
+2. `JsonPlanExecutor`
+   - 输入：`JsonExecutionPlan`
+   - 输出：`JsonExecutionResult`
+   - 职责：按依赖与顺序执行步骤、解析参数、反射调用 Spring Bean 方法、保存每步结果、汇总最终结果
+
+3. `LLMService` 集成层
+   - 仍负责组装模型提示词
+   - 新增调用解析器与执行器
+   - 返回执行结果 JSON，便于上层直接消费
+
+**Data Model**
+
+- `JsonExecutionPlan`
+  - `planId`
+  - `intent`
+  - `List<JsonExecutionStep> steps`
+
+- `JsonExecutionStep`
+  - `stepId`
+  - `methodKey`
+  - `beanName`
+  - `methodName`
+  - `declaringClassName`
+  - `Map<String, Object> parameters`
+  - `saveResultAs`
+  - `List<String> dependsOn`
+
+- `JsonReference`
+  - `ref`
+  - 仅用于表达 `{"$ref":"step1.id"}` 这类参数
+
+- `JsonExecutionResult`
+  - `planId`
+  - `intent`
+  - `success`
+  - `finalResult`
+  - `Map<String, Object> stepResults`
+  - `List<String> executedSteps`
+
+**Execution Rules**
+
+1. 入口先解析 JSON，若非法则直接抛出带上下文的异常。
+2. 每个步骤优先使用 `methodKey` 定位注册方法。
+3. `beanName`、`methodName`、`declaringClassName` 作为一致性校验信息：
+   - 若为空，允许忽略
+   - 若提供但与注册信息不一致，直接失败，避免模型幻觉误调用
+4. 参数绑定按 Java 反射参数顺序执行：
+   - `String`、`Number`、`Boolean` 直接使用
+   - `{"$ref":"step1.id"}` 先从 `step1` 的返回值读取字段 `id`
+5. 步骤结果默认按 `stepId` 保存，便于 `$ref`
+6. `saveResultAs` 初版只做结果别名存储，不扩展新的引用语法
+7. 最终返回最后一个已执行步骤的结果，同时附带执行轨迹
+
+**Reference Resolution**
+
+- 支持：
+  - `step1`
+  - `step1.id`
+  - `step1.customer.name`
+- 不支持：
+  - `step1.items[0]`
+  - 函数表达式
+  - 条件表达式
+
+字段路径解析策略：
+
+- 若当前对象是 `Map`，按 key 取值
+- 若当前对象是普通 Java Bean，按字段名或 getter 名解析
+- 任一层不存在字段时直接失败，错误信息包含原始 `$ref`
+
+**Error Handling**
+
+- 计划为空、步骤为空、重复 `stepId`、缺失依赖：解析阶段失败
+- `methodKey` 未注册：执行阶段失败
+- `dependsOn` 指向未执行步骤：执行阶段失败
+- 参数数量或名称不匹配：执行阶段失败
+- `$ref` 无法解析：执行阶段失败
+- 目标方法抛异常：包装后向上抛出，保留 `stepId` 与 `methodKey`
+
+初版采用快速失败，不做容错继续执行，原因是这类计划有严格前后依赖，继续执行通常只会放大错误。
+
+**Testing Strategy**
+
+测试聚焦四类行为：
+
+1. 解析成功
+   - 合法计划可被正确解析
+
+2. 解析失败
+   - 非法 JSON
+   - 重复 `stepId`
+   - 缺失依赖
+
+3. 执行成功
+   - 单步骤字面量参数调用
+   - 多步骤 `$ref` 串联调用
+
+4. 执行失败
+   - 未注册 `methodKey`
+   - `$ref` 字段不存在
+   - 模型输出的 `beanName`/`methodName` 与注册信息冲突
+
+**Implementation Notes**
+
+- 优先复用 `GsonUtil` 做 JSON 反序列化，减少新依赖。
+- 优先复用 `PrivateMcpToolSchemaRegistry#getRegisteredBean` 与 `#getRegisteredMethod`。
+- 不修改现有工具方法签名。
+- 需要同步修正 `LLMService` 提示词中的步骤 `required` 字段，使其与当前协议一致，避免模型生成无效键名。
+
+**Open Decisions**
+
+当前默认返回 `JsonExecutionResult` 的 JSON 字符串，而不是直接返回最后一步原始对象。这样更利于排查模型计划与执行过程。如果后续上层只关心业务对象，可以再增加一个“仅返回 finalResult”的封装方法。

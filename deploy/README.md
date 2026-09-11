@@ -1,6 +1,12 @@
 # Enterprise MCP Linux 部署
 
-本目录提供首期 Linux 部署工具。每个租户的每个 MCPServer 都应使用独立的 `instance-id`、目录、运行用户和 systemd 服务。
+本目录提供客户 Runtime 的 Linux 部署工具。每个客户实例对外只交付并运行 `customer/app` 生成的一个客户专属 Spring Boot Fat JAR（例如 `customer-enterprise-mcp-1.0.0.jar`）；客户对外的 `@McpTool`、内部 `@PrivateMcpTool`、Mapper、SQL 模板和 API Adapter 均已编译在这个 JAR 内，云端不保存也不执行这些实现。
+
+Control Plane 是厂商侧独立服务，使用 `enterprise-mcp-control-plane-<version>.jar` 部署，不进入客户内网交付包。客户 Runtime 在启动时读取 JAR 内的登记 tenantId、instanceId、JAR 版本和 artifactDigest；云端仅根据已发布的目录返回计划，Runtime 再以本地注册表反射调用客户代码。
+
+Control Plane 不使用本地 JSON 文件保存业务状态。启动时必须通过
+`ENTERPRISE_MCP_DB_URL`、`ENTERPRISE_MCP_DB_USERNAME` 和 `ENTERPRISE_MCP_DB_PASSWORD`
+连接 MySQL，Flyway 会创建或升级多客户 Catalog、Runtime 注册、能力快照和发布记录表。
 
 ## 目录约定
 
@@ -13,6 +19,8 @@
 ```
 
 配置和状态分别放在 `/etc/enterprise-mcp/<instance-id>/` 与 `/var/lib/enterprise-mcp/<instance-id>/`，不会随版本包覆盖。
+每个实例的外置配置必须提供该客户 AgentServer 的 `SAAS_AGENT_PUBLIC_KEY_PEM` 和
+`SAAS_AGENT_PUBLIC_KEY_FINGERPRINT`；公钥格式错误或指纹不匹配时 Runtime 会拒绝启动，禁止复制其他客户的配置文件直接上线。
 
 ## 首次安装
 

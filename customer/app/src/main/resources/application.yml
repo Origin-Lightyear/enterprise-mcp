@@ -1,0 +1,96 @@
+server:
+  port: ${ENTERPRISE_MCP_PORT:6001}
+spring:
+  application:
+    name: customer-enterprise-mcp
+  # Spring AI 组件配置。
+  ai:
+    # MCP 协议服务配置。
+    mcp:
+      server:
+        # 是否启用 Spring AI MCP Server；客户 Runtime 正常运行时应保持 true。
+        enabled: true
+        # 对外发布的 MCP Server 名称，可按客户或实例命名。
+        name: ${ENTERPRISE_MCP_SERVER_NAME:customer-enterprise-mcp}
+        # MCP Tool 使用同步调用模型；当前执行器按同步计划执行，不应改为 async。
+        type: sync
+        # MCP Server 对外声明的版本，应与当前客户 Fat JAR 的 artifact-version 保持一致。
+        version: ${enterprise.runtime.artifact-version:1.0.0}
+        # MCP 传输协议类型
+        protocol: streamable
+        # MCP 注解扫描配置。
+        annotation-scanner:
+          # 是否扫描 @McpTool
+          enabled: true
+        # Streamable HTTP 传输配置。
+        streamable-http:
+          # Streamable HTTP 的 MCP 请求入口路径。
+          mcp-endpoint: /mcp
+
+# 客户配置。
+enterprise:
+  # 单 JAR 在线升级配置。
+  upgrade:
+    # 调用本地升级接口时使用的共享令牌；启用远程升级时必填，必须通过 Secret 注入。
+    token: ${ENTERPRISE_MCP_UPGRADE_TOKEN:}
+    # Runtime 触发升级时执行的客户服务器脚本绝对路径。
+    command: ${ENTERPRISE_MCP_UPDATER_COMMAND:/usr/local/libexec/enterprise-mcp-updater.sh}
+
+  # 身份配置。
+  runtime:
+    # 租户唯一编号；Runtime 注册、SaaS 请求和权限校验共用这一身份来源。
+    tenant-id: ${SAAS_TENANT_ID:1}
+    # 参与云端注册、计划绑定和升级定位的 Runtime 实例编号。
+    instance-id: ${ENTERPRISE_MCP_INSTANCE_ID:dlsh01}
+    # 当前客户 Fat JAR 版本，必须与构建产物和云端 Catalog 绑定版本一致。
+    artifact-version: ${ENTERPRISE_MCP_ARTIFACT_VERSION:1.0.0}
+    # 当前客户 Fat JAR 的发布摘要；正式发布流程必填，用于云端核对实际部署产物。
+    artifact-digest: ${ENTERPRISE_MCP_ARTIFACT_DIGEST:首次部署}
+
+  # 云端 control-plane 配置。
+  planning-gateway:
+    url: ${ENTERPRISE_MCP_PLANNING_URL:http://10.69.188.230:7001/control-plane/planning/plans}
+    connect-timeout: ${ENTERPRISE_MCP_PLANNING_CONNECT_TIMEOUT:3s}
+    read-timeout: ${ENTERPRISE_MCP_PLANNING_READ_TIMEOUT:15s}
+
+
+  # 本地计划执行配置
+  execution:
+    # 单份执行计划允许的最大步骤数
+    max-steps: ${ENTERPRISE_MCP_MAX_STEPS:100}
+    # foreach 等循环步骤允许的最大累计迭代次数。
+    max-loop-iterations: ${ENTERPRISE_MCP_MAX_LOOP_ITERATIONS:1000}
+    # 单次执行结果允许的最大字节数，默认 1 MiB，超限时终止或拒绝返回。
+    max-result-bytes: ${ENTERPRISE_MCP_MAX_RESULT_BYTES:1048576}
+    # 单份计划在客户 Runtime 内允许执行的最长时间。
+    timeout: ${ENTERPRISE_MCP_EXECUTION_TIMEOUT:60s}
+
+# Platform/Tenant 及 Agent
+saas:
+  # 复用 enterprise.runtime.tenant-id
+  tenant-id: ${enterprise.runtime.tenant-id}
+  tenant-zone: ${SAAS_TENANT_ZONE:Asia/Shanghai}
+  saas-server: ${SAAS_SERVER_URL:http://127.0.0.1:8001}
+  tenant-server: ${TENANT_SERVER_URL:http://127.0.0.1:8002}
+  # 租户授权和配置的轮询刷新策略。
+  tenant-config-polling:
+    # 启动后首次同步租户配置前的等待时间。
+    initial-delay: ${SAAS_CONFIG_POLL_INITIAL_DELAY:30s}
+    # 两次租户配置同步任务之间的固定间隔。
+    fixed-delay: ${SAAS_CONFIG_POLL_FIXED_DELAY:30s}
+
+  # Platform/Tenant 超时配置。
+  http:
+    connect-timeout: ${SAAS_HTTP_CONNECT_TIMEOUT:3s}
+    read-timeout: ${SAAS_HTTP_READ_TIMEOUT:10s}
+
+  # Agent 请求签名的时间窗口和防重放配置。
+  verify:
+    # 租户公钥
+    agent-public-key-pem: ${SAAS_AGENT_PUBLIC_KEY_PEM:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAogJqkFl3+FH+9pydLF9pvc8oMABY5va8EKZLa/sEVOODMWwLUP8ZOBELDsxZMdFolXAmmxYSkWGZ6ox5R688qqdtYE2sP2pkjKNVMmE+2YBUixFJzpQNjJOIKgE5uMkRH+tIVzq9y7PGzzx1PG9GZD/BS0lA2P+Uv/yJRXHJ3hc2BM9lF+LIVUzBno1eRDHYQKVujqd6WJHNjVYPPZRu0DoczauLHmNFq8TvR50BMz2KWdRYdmtW7UJSF+8zm4/UUYtYkpqreC0QXhe4eC7LULBZ/TZci5rDJFTN0oQ11lTC4HIF2GdBEWh4pZeAPWyUUyEETYlvI6vVxQ+Dh2KJXQIDAQAB}
+    # 指纹
+    agent-public-key-fingerprint: ${SAAS_AGENT_PUBLIC_KEY_FINGERPRINT:fdcc1c3673338fd742a4176893afc42963d2d615ecb3fe52a361339ab02780a7}
+    # 请求时间戳允许的最大偏差秒数
+    timestamp-skew-seconds: ${SAAS_TIMESTAMP_SKEW_SECONDS:300}
+    # 已使用 nonce 的保留秒数；有效期内重复 nonce 会被视为重放请求并拒绝。
+    nonce-ttl-seconds: ${SAAS_NONCE_TTL_SECONDS:300}

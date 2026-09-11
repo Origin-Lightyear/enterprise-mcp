@@ -1,0 +1,268 @@
+# Enterprise MCP 模块开发、打包与部署指南
+
+本文是日常开发和发布的操作手册。仓库固定为四个 Maven 模块，不应再按连接器或技术功能继续拆 Maven 模块。
+
+## 1. 两个部署端
+
+系统只有两个运行进程：
+
+| 端 | 主模块 | 主类 | 部署数量 |
+|---|---|---|---|
+| 云端 | `cloud/control-plane` | `com.kevin.mcp.cloud.bootstrap.ControlPlaneApplication` | 厂商环境统一部署 |
+| 客户侧 | `customer/app` | `com.customer.mcp.bootstrap.CustomerMcpApplication` | 每个客户环境部署一份专属 JAR |
+
+云端负责“理解和规划”，客户侧负责“校验和执行”。客户数据库凭据、内部方法实现和返回数据不进入云端。
+
+## 2. 四个 Maven 模块
+
+| 模块 | 类型 | 负责内容 | 修改场景 | 禁止放入 |
+|---|---|---|---|---|
+| `shared/contract` | 普通依赖 JAR | 注解、计划 DTO、Schema 类型、资源类型、通用 JSON 契约 | 两侧通信结构或能力注解发生变化 | Spring Bean、客户逻辑、数据库驱动、密钥 |
+| `customer/runtime` | 普通依赖 JAR | MCP 协议、公共 Tool 执行门面、本地 Registry、Manifest 校验、计划执行、确定性权限、结构化审计、多 JDBC/HTTP 资源、云端客户端、租户身份 | 所有客户都需要的安全执行流程变化 | 对外 `@McpTool`、LLM Client、规划 Prompt、客户 SQL、客户字段映射、客户 URL、客户业务方法 |
+| `customer/app` | 可执行 Fat JAR | 客户启动类、对外 `@McpTool`、内部 `@PrivateMcpTool`、客户领域对象、Mapper、SQL、内部 API Adapter、客户依赖和现场配置 | 接入新客户或修改某客户 MCP 契约或内部系统 | 云端规划、其他客户代码 |
+| `cloud/control-plane` | 可执行 Fat JAR | Planning Catalog、Runtime 注册、LLM 规划、MySQL 云端存储 | 修改目录生命周期或规划 | 客户数据库驱动、客户方法、客户密码、Java `methodKey` 执行 |
+
+依赖图：
+
+```text
+customer/app
+    └── customer/runtime
+            └── shared/contract
+
+cloud/control-plane
+    └── shared/contract
+```
+
+## 3. Java 目录职责
+
+### 3.1 客户主模块 `customer/app`
+
+```text
+com.customer.mcp
+├── bootstrap       # 唯一启动类和客户能力装配
+├── tool            # 客户对外 @McpTool；名称、描述和参数可按客户调整
+├── capability      # @PrivateMcpTool 客户内部方法
+├── configuration   # 客户能力注册和客户专属 Spring 装配
+├── domain          # 客户领域对象
+├── repository      # 客户 Mapper/Repository，需要时创建
+└── integration     # 客户内部 API Adapter，需要时创建
+```
+
+客户 SQL 放在 `customer/app/src/main/resources/sql/`，MyBatis XML 放在 `mapper/`。某客户需要 MyBatis、Oracle SDK、金蝶 SDK 或私有 SDK 时，只在该客户 `app/pom.xml` 增加依赖。
+
+### 3.2 客户 Runtime `customer/runtime`
+
+```text
+com.kevin.mcp
+├── agent
+│   ├── client          # SaaS 与 Control Plane HTTP 客户端
+│   ├── configuration   # Runtime 身份和规划网关配置
+│   ├── identity        # 请求签名、租户身份和可用性
+│   ├── model           # 租户与员工配置模型
+│   └── service         # 租户配置同步与缓存
+├── artifact            # 构建期 Schema/Manifest 生成
+├── audit               # 本地执行审计
+├── authorization       # 本地白名单、权限审查和脱敏
+├── capability          # @PrivateMcpTool Registry 和能力映射
+├── configuration       # Spring 公共装配
+├── execution           # JSON 计划解析、预算和反射执行
+├── manifest            # 打包清单、摘要和启动校验
+├── planning            # 仅请求云端计划，不包含 Prompt 或 LLM Client
+├── resource
+│   ├── configuration   # 多资源配置和校验
+│   ├── jdbc            # MySQL/SQL Server 等 JDBC 连接
+│   ├── http            # 内部 HTTP API 访问和保护
+│   └── secret          # 凭据获取接口及默认实现
+├── security            # Agent 请求验签和防重放
+├── tools               # 无 @McpTool 的公共认证、规划、授权、执行和审计门面
+└── upgrade             # 客户单 JAR 升级入口
+```
+
+这些 package 只是一个 Runtime 模块内部的职责目录，不会生成额外 JAR。
+
+### 3.3 云端主模块 `cloud/control-plane`
+
+```text
+com.kevin.mcp.cloud
+├── bootstrap       # 云端唯一启动类
+├── api             # 目录发布、Runtime 注册和规划 HTTP 入口
+├── catalog         # Planning Catalog 状态与仓储
+├── employee        # Tenant 员工 LLM 配置客户端、租户员工隔离缓存和请求级调用配置
+├── planning        # PlanningPrompt、LLM 调用和计划校验
+│   └── prompt      # 云端独有的完整规划规则和输出 JSON Schema
+├── tool            # 云端密钥指纹和 Agent 请求头联调工具，不参与在线规划
+└── configuration   # 云端配置模型
+```
+
+## 4. 新客户开发流程
+
+1. 复制或按客户代码维护 `customer/app`，调整 `groupId`、`artifactId`、版本和 Java 根包名。
+2. 在 `tool` 中定义该客户对外的 `@McpTool` 名称、描述和参数，并调用 `CommonInternalTool.execute` 进入公共安全执行流程。
+3. 在 `capability` 中实现客户内部方法，同时标注 `@PrivateMcpTool` 和稳定的 `@LocalCapability`。
+4. 在 `repository`、`resources/sql` 或 `integration` 中实现客户数据库与 API 访问。
+5. 运行时 Registry 会自动扫描 Spring Bean 上的 `@PrivateMcpTool` 与 `@LocalCapability`。
+6. 在客户 `app/pom.xml` 增加该客户需要的 SDK；公共 Runtime 不增加客户专属依赖。
+7. 在外置 `application.yml` 配置资源地址、客户 Agent RSA 公钥和指纹，在 Secret Provider、环境变量或 JVM 属性配置凭据。
+8. 执行客户模块测试和全量构建。
+9. 部署客户单 JAR，Runtime 启动时自动上报完整规划 Schema。
+
+## 5. Schema 如何到云端
+
+Schema 由生产客户 Runtime 启动时从注册器生成并上报：
+
+```text
+客户 Capability 类
+  -> 客户 Runtime 启动扫描并生成完整规划 Schema
+  -> 一次性上报 tenantId、instanceId、JAR 摘要和完整 Schema
+  -> 云端保存 Catalog 快照并刷新规划缓存
+```
+
+云端计划生成的真实输入和输出为：
+
+```text
+PlanningCatalog.catalogJson
+  + PlanningPrompt（完整 call/foreach/dependsOn/fromStep/fromItem 协议）
+  + 用户原始意图
+  + Tenant 按 tenantId/employeeId 返回的员工 LLM 配置
+  -> CloudLlmClient
+  -> ExecutionPlanValidator（能力、版本、参数、依赖和引用校验）
+  -> ControlPlanePlanningService 绑定 Runtime 并返回计划
+```
+
+上报云端的规划 Schema 必须移除 `methodKey`、Java 类名和 Bean 信息。
+云端不获得 Java 方法体，计划中也不下发可任意反射的类名或 SQL。
+
+## 6. Maven 构建
+
+### 整仓测试和打包
+
+```bash
+mvn clean test
+mvn -DskipTests package
+```
+
+### 只构建云端
+
+```bash
+mvn -pl cloud/control-plane -am clean package
+```
+
+产物：
+
+```text
+cloud/control-plane/target/enterprise-mcp-control-plane-0.0.1-SNAPSHOT.jar
+```
+
+### 只构建客户侧
+
+```bash
+mvn -pl customer/app -am clean package
+```
+
+产物：
+
+```text
+customer/app/target/customer-enterprise-mcp-1.0.0.jar
+```
+
+`-am` 会自动先构建依赖模块。客户服务器只接收上面的客户 Fat JAR 和一份外置配置，不接收 `customer/runtime` 或 `shared/contract` 的独立 JAR。
+
+## 7. Fat JAR 内容
+
+客户 Fat JAR 包含：
+
+- `customer/app` 的客户 Capability、领域对象、Mapper、SQL、API Adapter；
+- `customer/runtime` 的执行、连接器、安全、审计和云端客户端；
+- `shared/contract` 的公共契约；
+- MySQL、SQL Server 和该客户选用的第三方驱动或 SDK；
+- `。
+
+云端 Fat JAR 只包含 `cloud/control-plane`、`shared/contract` 和云端 Web 依赖，不包含客户 Runtime 与客户 Capability。
+
+## 8. 配置归属
+
+| 配置文件 | 所属进程 | 主要配置 |
+|---|---|---|
+| `cloud/control-plane/src/main/resources/application.yml` | 云端 | Tenant 服务地址、员工配置缓存、LLM 超时、MySQL/Flyway、云端端口 |
+| `customer/app/src/main/resources/application.yml` | 客户侧 | 租户身份、SaaS 地址、客户 Agent 公钥/指纹、规划网关、多资源、执行预算、审计 |
+
+`customer/runtime` 不允许出现 `application.yml`。公共库不能决定某客户的端口、数据库、URL 或凭据。
+
+Control Plane 启动时通过 Flyway 自动升级 `saas_mcp` 数据库，至少需要以下环境变量：
+
+```bash
+export ENTERPRISE_MCP_DB_URL='jdbc:mysql://mysql.example.com:3306/saas_mcp?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=true'
+export ENTERPRISE_MCP_DB_USERNAME='enterprise_mcp'
+export ENTERPRISE_MCP_DB_PASSWORD='<由 Secret 管理器注入>'
+```
+
+Catalog 内容以 `tenant_id + artifact_digest` 唯一；相同 JAR 摘要不能绑定不同 Schema。Runtime 注册以 `tenant_id + instance_id` 唯一，重复注册用于刷新实际版本和最后在线时间。
+
+客户外置配置至少包含以下规划绑定。Runtime 注册地址由规划地址按固定 Control Plane API 约定自动生成，无需单独配置：
+
+```yaml
+enterprise:
+  planning-gateway:
+    url: https://control.example.com/control-plane/planning/plans
+saas:
+  verify:
+    agent-public-key-pem: ${SAAS_AGENT_PUBLIC_KEY_PEM}
+    agent-public-key-fingerprint: ${SAAS_AGENT_PUBLIC_KEY_FINGERPRINT}
+```
+
+JAR 摘要必须与云端保存的 Catalog 绑定，用于发布版本和运行实例匹配。
+缺少这些配置或云端不可用时，客户 Runtime 拒绝规划，不会在本地调用 LLM 兜底。计划响应不再使用云端签名；Artifact SHA-256 仅用于发布包完整性校验和版本审计。
+`agent-public-key-pem` 是当前客户 AgentServer 请求签名私钥所对应的 RSA 公钥；`agent-public-key-fingerprint`
+是该公钥 DER 字节的 SHA-256 十六进制值。两者缺失或不匹配时 Runtime 拒绝启动，配置文件自身必须由受信发布流程保护。
+
+生产部署时使用：
+
+```bash
+java -jar app.jar --spring.config.additional-location=file:/etc/enterprise-mcp/<instance-id>/application.yml
+```
+
+仓库内配置只能提供无密钥默认值。数据库密码、API Token、员工 LLM Key 和 Agent 验签公钥必须由所属系统或部署环境注入。
+员工 LLM Key 仍由 Tenant 管理，既不进入客户 Runtime 请求，也不写入 Control Plane 配置或计划响应。
+
+## 9. 两侧运行流程
+
+```text
+用户意图
+  -> customer/app 的客户 @McpTool 接收客户专属参数并组装意图
+  -> CommonInternalTool.execute 进入公共 Runtime 安全执行流程
+  -> 客户 Runtime 使用当前客户 Agent 公钥校验租户和员工身份
+  -> 客户 Runtime 携带客户/实例/JAR/Catalog/Manifest/租户/员工身份向云端请求规划
+  -> 云端按 tenantId + employeeId 调用 Tenant 内部接口读取员工 newapiUrl/apiKey
+  -> Tenant 未返回 model 时，云端使用员工 Key 调用 newapiUrl/v1/models 解析默认模型
+  -> 云端组合 ACTIVE Catalog Schema、PlanningPrompt 和用户意图，使用员工配置调用 LLM
+  -> 云端校验 JSON 计划只能使用 Catalog capabilityId、版本和合法参数
+  -> 云端绑定客户/实例/版本/摘要并返回计划
+  -> 客户 Runtime 校验预算和本地授权
+  -> Registry 将 capabilityId 映射到本地 @PrivateMcpTool
+  -> 客户代码访问多个 JDBC 数据源或内部 API
+  -> 客户 Runtime 脱敏、审计并返回结果
+```
+
+员工调用配置在云端仅按 `tenantId + employeeId` 进行有容量上限的短 TTL 内存缓存。缓存硬过期后必须同步刷新；
+Tenant 或 NewAPI 刷新失败时规划失败，不使用旧 Key。日志、异常、DTO `toString()` 和计划响应均不得包含 API Key。
+
+当前 Tenant `/api/v1/agent/inner/employee-llm-config` 使用 `@AllowAnonymous`，安全性依赖受控服务网络。
+这只是现有接口约束，不是公网部署方案；接入生产环境时必须配置网络访问控制，并补充 mTLS 或服务身份 Token。
+
+跨库和 API 调用不使用分布式事务。首期以只读链路为主，按步骤保留失败位置和审计摘要；写操作必须单独设计幂等、补偿和人工处置。
+
+客户侧权限不能依赖 LLM 作为最终授权屏障。当前 `allowCapabilities` 由 Runtime 硬校验；旧的自然语言 `denyRules`
+尚未迁移为确定性能力规则时一律失败关闭，`sensitiveRules` 未提供精确字段路径时遮蔽整份结果。
+接入真实权限环境时应把 Tenant 权限快照升级为明确的 capability/字段规则，之后才能恢复细粒度拒绝和字段脱敏。
+
+## 10. 修改后的最低验证
+
+| 修改范围 | 最低验证 |
+|---|---|
+| `shared/contract` | 整仓测试，检查两侧编译兼容 |
+| `customer/runtime` | Runtime 单元测试，安全/权限/预算/连接器回归 |
+| `customer/app` | Manifest 生成、Fat JAR 内容检查、JAR 启动 |
+| `cloud/control-plane` | 目录状态、注册匹配、计划生成测试、JAR 启动 |
+| 部署脚本 | `bash -n`，隔离 Linux 环境安装、升级和回滚演练 |
+
+本地构建不等于真实客户验收。真实 MySQL、SQL Server、内部 API、身份权限、证书、网络策略和 systemd 必须在客户测试环境留下验证证据。
