@@ -63,25 +63,35 @@ public class PlanningGatewayClient {
     }
 
     /**
-     * 上报客户 Runtime 当前实际部署版本，供 Control Plane 激活匹配目录。
+     * 请求 Control Plane 独立确认不可变 Catalog Snapshot。
      *
-     * @param registration Runtime 注册信息
-     * @return 云端确认后的注册信息
+     * @param candidate Catalog 候选
+     * @return 云端确认结果
      */
-    public Map<?, ?> registerRuntime(Map<String, Object> registration) {
+    public Map<?, ?> confirmCatalog(Map<String, Object> candidate) {
+        return exchangeCatalog(properties.catalogConfirmationUrl(), candidate, false);
+    }
+
+    /**
+     * 更新 Runtime 已在本地提交的当前 Catalog 引用。
+     *
+     * @param reference Runtime 当前引用
+     * @return 云端保存结果
+     */
+    public Map<?, ?> referenceCatalog(Map<String, Object> reference) {
+        return exchangeCatalog(properties.catalogReferenceUrl(), reference, true);
+    }
+
+    private Map<?, ?> exchangeCatalog(String url, Map<String, Object> payload, boolean put) {
         if (properties.getUrl() == null || properties.getUrl().isBlank()) {
             throw new IllegalStateException("Planning Gateway URL is not configured");
         }
-        String registrationUrl = properties.registrationUrl();
         try {
-            Map<?, ?> response = restClient.post()
-                    .uri(registrationUrl)
-                    .body(registration)
-                    .retrieve()
-                    .body(Map.class);
+            RestClient.RequestBodySpec request = put ? restClient.put().uri(url) : restClient.post().uri(url);
+            Map<?, ?> response = request.body(payload).retrieve().body(Map.class);
             return response == null ? Map.of() : response;
         } catch (RestClientResponseException exception) {
-            throw new IllegalStateException("Runtime registration rejected: HTTP " + exception.getStatusCode().value()
+            throw new IllegalStateException("Runtime Catalog request rejected: HTTP " + exception.getStatusCode().value()
                     + ", response=" + responseBody(exception), exception);
         }
     }

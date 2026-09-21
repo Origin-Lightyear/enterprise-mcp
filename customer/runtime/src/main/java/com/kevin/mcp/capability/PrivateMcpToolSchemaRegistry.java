@@ -134,6 +134,7 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
                     descriptor == null || descriptor.description().isBlank() ? null : descriptor.description(),
                     descriptor == null ? null : compactSchema(descriptor.inputSchema()),
                     descriptor == null ? null : compactSchema(descriptor.outputSchema()),
+                    capability.executorType().name(), capability.batchMode().name(),
                     capability.mode().name(), capability.dataDomain()
             ));
         }
@@ -324,7 +325,7 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
                     capability.id(),
                     capability.version(),
                     methodKey,
-                    capability.mode(),
+                    capability.mode(), capability.executorType(), capability.batchMode(),
                     capability.dataDomain()
             ));
         }
@@ -384,7 +385,9 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
      * @param description 能力描述
      * @param parameters 输入 Schema
      * @param outputSchema 输出 Schema
-     * @param mode 读写模式
+     * @param executorType 执行器类型
+     * @param batchMode 批量调用方式
+     * @param operationMode 读写模式
      * @param dataDomain 数据域
      */
     public record CloudPlanningSchema(
@@ -393,7 +396,9 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
             String description,
             CompactMethodSchema parameters,
             CompactMethodSchema outputSchema,
-            String mode,
+            String executorType,
+            String batchMode,
+            String operationMode,
             String dataDomain
     ) {
     }

@@ -1,0 +1,7 @@
+wren-core-py>=0.8.0
+duckdb>=1.5.0
+sqlglot>=29
+pyarrow>=14
+pyyaml>=6.0
+requests>=2.33.0
+lancedb==0.38.0

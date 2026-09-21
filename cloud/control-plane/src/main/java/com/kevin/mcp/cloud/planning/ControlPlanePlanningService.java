@@ -1,5 +1,7 @@
 package com.kevin.mcp.cloud.planning;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.kevin.mcp.cloud.api.PlanningRequest;
 import com.kevin.mcp.cloud.catalog.PlanningCatalog;
 import com.kevin.mcp.cloud.catalog.PlanningCatalogService;
@@ -13,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 根据已激活规划目录调用模型并生成执行计划。
+ * 根据 Runtime 明确指定的 Catalog Snapshot 调用模型并生成执行计划。
  *
  * @author Kevin
  * @date 2026-09-09
@@ -21,6 +23,8 @@ import java.util.Map;
 @Service
 @Profile("control-plane")
 public class ControlPlanePlanningService {
+
+    private static final int PLAN_CONTRACT_VERSION = 1;
 
     private final PlanningCatalogService catalogService;
     private final ControlPlanePlanningProperties properties;
@@ -46,7 +50,7 @@ public class ControlPlanePlanningService {
     }
 
     /**
-     * 根据 ACTIVE 目录生成绑定当前 Runtime 的执行计划。
+     * 根据精确 Catalog Digest 生成绑定当前 Runtime 的执行计划。
      *
      * @param request 规划请求
      * @return 执行计划
@@ -54,8 +58,8 @@ public class ControlPlanePlanningService {
      */
     public Map<String, Object> plan(PlanningRequest request) throws Exception {
         validateRequest(request);
-        PlanningCatalog catalog = catalogService.find(request.tenantId(), request.artifactDigest())
-                .orElseThrow(() -> new IllegalStateException("Planning catalog not found for artifact"));
+        PlanningCatalog catalog = catalogService.find(request.tenantId(), request.catalogDigest())
+                .orElseThrow(() -> new IllegalStateException("Planning Catalog Snapshot not found"));
         validateBinding(request, catalog);
         EmployeeLlmInvocationConfig invocationConfig = employeeLlmConfigService.getConfig(
                 request.tenantId(), request.employeeId());
@@ -63,9 +67,14 @@ public class ControlPlanePlanningService {
                 request.intent(), catalog.catalogJson(), invocationConfig);
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("planId", java.util.UUID.randomUUID().toString());
+        envelope.put("planContractVersion", PLAN_CONTRACT_VERSION);
         envelope.put("instanceId", request.instanceId());
-        envelope.put("artifactVersion", request.artifactVersion());
+        envelope.put("runtimeVersion", request.artifactVersion());
         envelope.put("artifactDigest", request.artifactDigest());
+        envelope.put("catalogDigest", request.catalogDigest());
+        envelope.put("mdlDigest", mdlDigest(catalog.catalogJson()));
+        envelope.put("asOf", java.time.Instant.now().toString());
+        envelope.put("consistencyMode", "BEST_EFFORT_CURRENT");
         envelope.put("tenantId", request.tenantId());
         envelope.put("employeeId", request.employeeId());
         envelope.putAll(modelPlan);
@@ -76,18 +85,20 @@ public class ControlPlanePlanningService {
     private void validateRequest(PlanningRequest request) {
         if (request == null || isBlank(request.tenantId()) || isBlank(request.instanceId())
                 || isBlank(request.artifactVersion()) || isBlank(request.artifactDigest())
+                || isBlank(request.catalogDigest())
                 || isBlank(request.employeeId()) || isBlank(request.intent())) {
             throw new IllegalArgumentException("Planning request identity and intent are required");
         }
     }
 
-    /** 校验请求、ACTIVE Catalog 与具体 Runtime 注册记录必须绑定到同一发布产物。 */
+    /** 校验请求、Catalog Snapshot 与 Runtime 当前引用必须精确一致。 */
     private void validateBinding(PlanningRequest request, PlanningCatalog catalog) {
-        if (!request.artifactVersion().equals(catalog.artifactVersion())) {
-            throw new SecurityException("Planning Catalog does not match Runtime artifact");
+        if (!request.catalogDigest().equals(catalog.catalogDigest())) {
+            throw new SecurityException("Planning Catalog does not match requested digest");
         }
         boolean registrationMatched = catalogService.findRegistration(request.tenantId(), request.instanceId(),
-                request.artifactDigest()).filter(item -> request.artifactVersion().equals(item.artifactVersion())).isPresent();
+                request.artifactDigest(), request.catalogDigest())
+                .filter(item -> request.artifactVersion().equals(item.artifactVersion())).isPresent();
         if (!registrationMatched) {
             throw new SecurityException("Runtime registration does not match planning request");
         }
@@ -95,5 +106,10 @@ public class ControlPlanePlanningService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String mdlDigest(String catalogJson) {
+        JsonObject catalog = JsonParser.parseString(catalogJson).getAsJsonObject();
+        return catalog.has("mdlDigest") ? catalog.get("mdlDigest").getAsString() : "";
     }
 }

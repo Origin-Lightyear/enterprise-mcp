@@ -40,12 +40,16 @@ public class McpConfiguration {
                 .contextExtractor(serverRequest -> {
                     String authorization = serverRequest.headers().firstHeader("Authorization");
                     String tenant = serverRequest.headers().firstHeader("Tenant");
+                    String mcpInstanceId = serverRequest.headers().firstHeader("Mcp-Instance-Id");
                     String timestamp = serverRequest.headers().firstHeader("Timestamp");
+                    String expiresAt = serverRequest.headers().firstHeader("Expires-At");
                     String nonce = serverRequest.headers().firstHeader("Nonce");
                     Map<String, Object> contextValues = new LinkedHashMap<>();
                     putIfPresent(contextValues, "authorization", authorization);
                     putIfPresent(contextValues, "tenant", tenant);
+                    putIfPresent(contextValues, "mcpInstanceId", mcpInstanceId);
                     putIfPresent(contextValues, "timestamp", timestamp);
+                    putIfPresent(contextValues, "expiresAt", expiresAt);
                     putIfPresent(contextValues, "nonce", nonce);
                     if (contextValues.isEmpty()) {
                         return McpTransportContext.EMPTY;

@@ -1,6 +1,7 @@
 package com.kevin.mcp.agent.identity;
 
 import com.kevin.mcp.agent.client.HttpAgentServerClient;
+import com.kevin.mcp.agent.configuration.RuntimeIdentityProperties;
 import com.kevin.mcp.agent.model.EmployeeAuth;
 import com.kevin.mcp.agent.service.TenantCacheService;
 import com.kevin.mcp.agent.service.TenantConfigSynchronizer;
@@ -25,8 +26,9 @@ public class AgentVerify {
     private final TenantCacheService tenantCacheService;
     private final HttpAgentServerClient agentServerClient;
     private final TenantConfigSynchronizer tenantConfigSynchronizer;
-    private final String tenantId;
+    private final RuntimeIdentityProperties runtimeIdentityProperties;
     private final long timestampSkewSeconds;
+    private final long credentialMaxTtlSeconds;
 
     /**
      * 注入请求来源校验依赖。
@@ -35,23 +37,26 @@ public class AgentVerify {
      * @param tenantCacheService 租户缓存服务
      * @param agentServerClient AgentServer 客户端
      * @param tenantConfigSynchronizer 租户配置同步器
-     * @param tenantId 当前服务绑定的租户
+     * @param runtimeIdentityProperties 当前 Runtime 的租户与实例身份
      * @param timestampSkewSeconds 允许的时间戳偏差秒数
+     * @param credentialMaxTtlSeconds 一次性凭证最长生命周期秒数
      */
     AgentVerify(
             AgentSecurityCodec agentSecurityCodec,
             TenantCacheService tenantCacheService,
             HttpAgentServerClient agentServerClient,
             TenantConfigSynchronizer tenantConfigSynchronizer,
-            @Value("${saas.tenant-id}") String tenantId,
-            @Value("${saas.verify.timestamp-skew-seconds:300}") long timestampSkewSeconds
+            RuntimeIdentityProperties runtimeIdentityProperties,
+            @Value("${saas.verify.timestamp-skew-seconds:300}") long timestampSkewSeconds,
+            @Value("${saas.verify.credential-max-ttl-seconds:60}") long credentialMaxTtlSeconds
     ) {
         this.agentSecurityCodec = agentSecurityCodec;
         this.tenantCacheService = tenantCacheService;
         this.agentServerClient = agentServerClient;
         this.tenantConfigSynchronizer = tenantConfigSynchronizer;
-        this.tenantId = tenantId;
+        this.runtimeIdentityProperties = runtimeIdentityProperties;
         this.timestampSkewSeconds = timestampSkewSeconds;
+        this.credentialMaxTtlSeconds = credentialMaxTtlSeconds;
     }
 
     /**
@@ -65,20 +70,27 @@ public class AgentVerify {
         // 提取请求头：签名凭证、租户标识、时间戳、随机数（防重放）
         String authorization = this.getHeader(context, "authorization");
         String tenantHeader = this.getHeader(context, "tenant");
+        String mcpInstanceId = this.getHeader(context, "mcpInstanceId");
         String timestamp = this.getHeader(context, "timestamp");
+        String expiresAt = this.getHeader(context, "expiresAt");
         String nonce = this.getHeader(context, "nonce");
-        if (authorization == null || tenantHeader == null || timestamp == null || nonce == null) {
+        if (authorization == null || tenantHeader == null || mcpInstanceId == null || timestamp == null
+                || expiresAt == null || nonce == null) {
             return null;
         }
 
         long requestTimestamp;
+        long credentialExpiresAt;
         try {
             requestTimestamp = Long.parseLong(timestamp);
+            credentialExpiresAt = Long.parseLong(expiresAt);
         } catch (NumberFormatException exception) {
             return null;
         }
         // 校验时间戳是否在允许的偏差范围内，防止重放攻击
-        if (!this.agentSecurityCodec.isTimestampAllowed(requestTimestamp, this.timestampSkewSeconds)) {
+        if (!this.agentSecurityCodec.isTimestampAllowed(requestTimestamp, this.timestampSkewSeconds)
+                || !this.agentSecurityCodec.isCredentialTimeAllowed(requestTimestamp, credentialExpiresAt,
+                this.credentialMaxTtlSeconds)) {
             return null;
         }
 
@@ -91,20 +103,21 @@ public class AgentVerify {
         }
 
         // 校验租户是否匹配当前服务绑定的租户
-        if (!this.tenantId.equals(requestInfo.tenantId())) {
-            return null;
-        }
-        // 校验 nonce 是否已被使用（防重放攻击）
-        if (this.tenantCacheService.isNonceUsed(requestInfo.tenantId(), nonce)) {
+        if (!this.runtimeIdentityProperties.getTenantId().equals(requestInfo.tenantId())
+                || !this.runtimeIdentityProperties.getInstanceId().equals(requestInfo.mcpInstanceId())
+                || !this.runtimeIdentityProperties.getInstanceId().equals(mcpInstanceId)) {
             return null;
         }
         // 校验请求签名，确保请求未被篡改
-        if (!this.agentSecurityCodec.verifySignature(tenantHeader, timestamp, nonce, authorization)) {
+        if (!this.agentSecurityCodec.verifySignature(tenantHeader, mcpInstanceId, timestamp, expiresAt, nonce,
+                authorization)) {
             return null;
         }
 
-        // 记录已使用的 nonce，后续相同 nonce 将被拒绝
-        this.tenantCacheService.rememberNonce(requestInfo.tenantId(), nonce);
+        // 验签成功后原子占用 nonce，避免无效请求消耗 nonce，也关闭并发重放窗口。
+        if (!this.tenantCacheService.rememberNonceIfAbsent(requestInfo.tenantId(), nonce)) {
+            return null;
+        }
         long cachedVersion = this.tenantCacheService.getTenantVersion(requestInfo.tenantId());
         EmployeeAuth employeeAuth = this.tenantCacheService.getEmployeeAuth(requestInfo.tenantId(), requestInfo.employeeId());
 

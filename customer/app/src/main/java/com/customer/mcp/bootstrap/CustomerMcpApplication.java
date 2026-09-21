@@ -2,6 +2,9 @@ package com.customer.mcp.bootstrap;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.customer.mcp.wren.WrenProperties;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 启动客户专属 Runtime，并同时扫描公共 Runtime 与客户能力实现。
@@ -11,6 +14,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication(scanBasePackages = {"com.kevin.mcp", "com.customer.mcp"}, excludeName = {
         "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"})
+@EnableConfigurationProperties(WrenProperties.class)
+@EnableScheduling
 public class CustomerMcpApplication {
 
     /**

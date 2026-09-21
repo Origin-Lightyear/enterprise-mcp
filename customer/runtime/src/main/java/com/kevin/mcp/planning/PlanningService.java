@@ -1,14 +1,15 @@
 package com.kevin.mcp.planning;
 
 import com.kevin.mcp.agent.client.PlanningGatewayClient;
-import com.kevin.mcp.agent.configuration.RuntimeIdentityProperties;
+import com.kevin.mcp.catalog.PlanningBinding;
+import com.kevin.mcp.catalog.RuntimeCatalog;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 请求云端生成执行计划；Runtime 的版本和摘要绑定由云端发布目录校验。
+ * 使用 Runtime Current Catalog 的精确绑定请求云端生成执行计划。
  *
  * @author Kevin
  * @date 2026-09-09
@@ -17,18 +18,18 @@ import java.util.Map;
 public class PlanningService {
 
     private final PlanningGatewayClient planningGatewayClient;
-    private final RuntimeIdentityProperties runtimeIdentityProperties;
+    private final RuntimeCatalog runtimeCatalog;
 
     /**
      * 注入云端规划客户端和 Runtime 身份。
      *
      * @param planningGatewayClient 云端规划客户端
-     * @param runtimeIdentityProperties Runtime 身份配置
+     * @param runtimeCatalog Runtime Catalog module
      */
     public PlanningService(PlanningGatewayClient planningGatewayClient,
-                           RuntimeIdentityProperties runtimeIdentityProperties) {
+                           RuntimeCatalog runtimeCatalog) {
         this.planningGatewayClient = planningGatewayClient;
-        this.runtimeIdentityProperties = runtimeIdentityProperties;
+        this.runtimeCatalog = runtimeCatalog;
     }
 
     /**
@@ -41,15 +42,13 @@ public class PlanningService {
      * @throws Exception 规划请求失败
      */
     public String plan(String intent, String tenantId, String employeeId) throws Exception {
-        if (runtimeIdentityProperties.getArtifactDigest() == null
-                || runtimeIdentityProperties.getArtifactDigest().isBlank()) {
-            throw new IllegalStateException("Runtime artifact digest is not configured");
-        }
+        PlanningBinding binding = runtimeCatalog.requirePlanningBinding();
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("tenantId", tenantId);
-        request.put("instanceId", runtimeIdentityProperties.getInstanceId());
-        request.put("artifactVersion", runtimeIdentityProperties.getArtifactVersion());
-        request.put("artifactDigest", runtimeIdentityProperties.getArtifactDigest());
+        request.put("instanceId", binding.instanceId());
+        request.put("artifactVersion", binding.artifactVersion());
+        request.put("artifactDigest", binding.artifactDigest());
+        request.put("catalogDigest", binding.catalogDigest());
         request.put("employeeId", employeeId);
         request.put("intent", intent);
         return planningGatewayClient.requestPlan(request);

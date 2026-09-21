@@ -39,7 +39,17 @@ public class JsonPlanParser {
         if (payload == null || payload.isEmpty()) {
             throw new IllegalArgumentException("Plan JSON is empty");
         }
-        String planId = this.stringValue(payload.get("planId"));
+        String planId = this.requireText(payload.get("planId"), "planId");
+        Integer planContractVersion = this.requireInteger(payload.get("planContractVersion"), "planContractVersion");
+        String tenantId = this.requireText(payload.get("tenantId"), "tenantId");
+        String employeeId = this.requireText(payload.get("employeeId"), "employeeId");
+        String instanceId = this.requireText(payload.get("instanceId"), "instanceId");
+        String runtimeVersion = this.requireText(payload.get("runtimeVersion"), "runtimeVersion");
+        String artifactDigest = this.requireText(payload.get("artifactDigest"), "artifactDigest");
+        String catalogDigest = this.requireText(payload.get("catalogDigest"), "catalogDigest");
+        String mdlDigest = this.stringValue(payload.get("mdlDigest"));
+        String asOf = this.requireText(payload.get("asOf"), "asOf");
+        String consistencyMode = this.requireText(payload.get("consistencyMode"), "consistencyMode");
         String intent = this.requireText(payload.get("intent"), "intent");
         String error = this.stringValue(payload.get("error"));
         List<JsonExecutionStep> steps = this.toOptionalSteps(payload.get("steps"), "steps");
@@ -49,7 +59,9 @@ public class JsonPlanParser {
         if (!steps.isEmpty()) {
             this.validateSteps(steps, Set.of(), null, "steps");
         }
-        return new JsonExecutionPlan(planId, intent, steps, error);
+        return new JsonExecutionPlan(planId, planContractVersion, tenantId, employeeId, instanceId,
+                runtimeVersion, artifactDigest, catalogDigest, mdlDigest == null ? "" : mdlDigest,
+                asOf, consistencyMode, intent, steps, error);
     }
 
     /**
@@ -348,6 +360,21 @@ public class JsonPlanParser {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Integer field is invalid: " + value, exception);
         }
+    }
+
+    /**
+     * 读取必填整数值。
+     *
+     * @param value 原始值
+     * @param fieldName 字段名
+     * @return 整数值
+     */
+    private Integer requireInteger(Object value, String fieldName) {
+        Integer integer = this.integerValue(value);
+        if (integer == null) {
+            throw new IllegalArgumentException("Missing required field: " + fieldName);
+        }
+        return integer;
     }
 
     /**

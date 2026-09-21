@@ -25,8 +25,8 @@ spring:
 enterprise:
   # Control Plane 的外部集成、缓存、签名和存储配置。
   control-plane:
-    # Tenant 服务基础地址；生产必填，用于按 tenantId + employeeId 查询员工 LLM 配置。
-    tenant-service-base-url: ${ENTERPRISE_MCP_CONTROL_TENANT_SERVICE_BASE_URL:}
+    # Tenant 服务基础地址；本地默认连接 8002，生产环境必须通过环境变量覆盖。
+    tenant-service-base-url: ${ENTERPRISE_MCP_CONTROL_TENANT_SERVICE_BASE_URL:http://127.0.0.1:8002}
     # Tenant 员工 LLM 配置接口路径；只有 Tenant 路由调整时才修改。
     employee-llm-config-path: /api/v1/agent/inner/employee-llm-config
     # 连接 Tenant 服务的最长等待时间，超时后本次规划失败关闭。
@@ -37,6 +37,10 @@ enterprise:
     employee-llm-config-cache-ttl: ${ENTERPRISE_MCP_CONTROL_EMPLOYEE_LLM_CONFIG_CACHE_TTL:5m}
     # 员工 LLM 配置缓存最大条目数，缓存键由 tenantId + employeeId 组成。
     employee-llm-config-cache-maximum-size: ${ENTERPRISE_MCP_CONTROL_EMPLOYEE_LLM_CONFIG_CACHE_MAXIMUM_SIZE:10000}
+    # 未被 Runtime 引用的 Catalog Snapshot 最短保留时间，覆盖在途确认与引用切换窗口。
+    catalog-retention-grace: ${ENTERPRISE_MCP_CONTROL_CATALOG_RETENTION_GRACE:10m}
+    # Catalog 清理任务执行间隔；删除时仍会在数据库事务内再次检查 Runtime 引用。
+    catalog-cleanup-delay: ${ENTERPRISE_MCP_CONTROL_CATALOG_CLEANUP_DELAY:1h}
     # 连接员工 NewAPI 的最长等待时间，适用于模型列表和规划请求。
     llm-connect-timeout: ${ENTERPRISE_MCP_CONTROL_LLM_CONNECT_TIMEOUT:15s}
     # 读取员工 NewAPI 规划响应的最长等待时间；复杂规划可按模型性能调整。

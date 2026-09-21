@@ -3,6 +3,9 @@ package com.kevin.mcp.cloud.catalog;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -19,16 +22,16 @@ public class InMemoryPlanningCatalogRepository implements PlanningCatalogReposit
 
     @Override
     public PlanningCatalog createCatalog(PlanningCatalog catalog) {
-        String key = catalog.tenantId() + ":" + catalog.artifactDigest();
+        String key = catalog.tenantId() + ":" + catalog.catalogDigest();
         if (catalogs.putIfAbsent(key, catalog) != null) {
-            throw new IllegalStateException("Artifact digest is already registered");
+            throw new IllegalStateException("Catalog digest is already registered");
         }
         return catalog;
     }
 
     @Override
-    public Optional<PlanningCatalog> findCatalog(String tenantId, String artifactDigest) {
-        return Optional.ofNullable(catalogs.get(tenantId + ":" + artifactDigest));
+    public Optional<PlanningCatalog> findCatalog(String tenantId, String catalogDigest) {
+        return Optional.ofNullable(catalogs.get(tenantId + ":" + catalogDigest));
     }
 
     @Override
@@ -38,8 +41,25 @@ public class InMemoryPlanningCatalogRepository implements PlanningCatalogReposit
     }
 
     @Override
-    public Optional<RuntimeRegistration> findRegistration(String tenantId, String instanceId, String artifactDigest) {
+    public Optional<RuntimeRegistration> findRegistration(String tenantId, String instanceId, String artifactDigest,
+                                                          String catalogDigest) {
         return Optional.ofNullable(registrations.get(tenantId + ":" + instanceId))
-                .filter(item -> artifactDigest.equals(item.artifactDigest()));
+                .filter(item -> artifactDigest.equals(item.artifactDigest()))
+                .filter(item -> catalogDigest.equals(item.catalogDigest()));
+    }
+
+    @Override
+    public List<PlanningCatalog> deleteUnreferencedBefore(Instant cutoff) {
+        List<PlanningCatalog> deleted = new ArrayList<>();
+        for (PlanningCatalog catalog : catalogs.values()) {
+            boolean referenced = registrations.values().stream()
+                    .anyMatch(item -> item.tenantId().equals(catalog.tenantId())
+                            && item.catalogDigest().equals(catalog.catalogDigest()));
+            String key = catalog.tenantId() + ":" + catalog.catalogDigest();
+            if (!referenced && catalog.createdAt().isBefore(cutoff) && catalogs.remove(key, catalog)) {
+                deleted.add(catalog);
+            }
+        }
+        return List.copyOf(deleted);
     }
 }

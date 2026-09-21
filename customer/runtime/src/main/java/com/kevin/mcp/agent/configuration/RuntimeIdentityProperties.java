@@ -24,6 +24,6 @@ public class RuntimeIdentityProperties {
     /** 当前客户 JAR 的发布版本。 */
     private String artifactVersion = "dev";
 
-    /** 当前客户 JAR 的 SHA-256 摘要。 */
+    /** 可选的客户 JAR SHA-256 期望摘要；packaged 模式用于校验 Runtime 自动计算值。 */
     private String artifactDigest = "";
 }

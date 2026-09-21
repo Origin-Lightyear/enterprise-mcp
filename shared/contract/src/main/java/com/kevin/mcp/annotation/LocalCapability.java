@@ -26,6 +26,12 @@ public @interface LocalCapability {
     /** 返回能力的数据访问模式。 */
     OperationMode mode() default OperationMode.READ_ONLY;
 
+    /** 返回能力的本地执行器类型。 */
+    ExecutorType executorType() default ExecutorType.JAVA;
+
+    /** 返回能力支持的批量调用方式。 */
+    BatchMode batchMode() default BatchMode.SINGLE;
+
     /** 返回能力所属的数据域。 */
     String dataDomain() default "";
 }

@@ -1,5 +1,7 @@
 package com.kevin.mcp.capability;
 
+import com.kevin.mcp.annotation.BatchMode;
+import com.kevin.mcp.annotation.ExecutorType;
 import com.kevin.mcp.annotation.OperationMode;
 
 /**
@@ -12,6 +14,8 @@ import com.kevin.mcp.annotation.OperationMode;
  * @param version 能力契约版本
  * @param methodKey 本地反射方法键
  * @param mode 能力读写模式
+ * @param executorType 能力执行器类型
+ * @param batchMode 批量调用方式
  * @param dataDomain 数据域
  */
 public record LocalCapabilityDescriptor(
@@ -19,6 +23,8 @@ public record LocalCapabilityDescriptor(
         int version,
         String methodKey,
         OperationMode mode,
+        ExecutorType executorType,
+        BatchMode batchMode,
         String dataDomain
 ) {
 }

@@ -1,0 +1,10 @@
+active: customer-primary
+profiles:
+  customer-primary:
+    datasource: mysql
+    host: 127.0.0.1
+    port: "3306"
+    database: customer_database
+    user: enterprise_mcp
+    password: ${CUSTOMER_DB_PASSWORD}
+    sslMode: ENABLED

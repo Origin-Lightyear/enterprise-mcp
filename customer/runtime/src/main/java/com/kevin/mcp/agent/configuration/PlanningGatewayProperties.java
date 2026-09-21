@@ -32,7 +32,21 @@ public class PlanningGatewayProperties {
      * @return Runtime 注册接口地址
      * @throws IllegalStateException 规划地址为空或不符合固定路径约定
      */
-    public String registrationUrl() {
+    public String catalogConfirmationUrl() {
+        return controlPlaneBaseUrl() + "/catalog-snapshots/confirm";
+    }
+
+    /**
+     * 根据固定 Control Plane interface 生成 Runtime 当前 Catalog 引用地址。
+     *
+     * @return Runtime Catalog 引用接口地址
+     * @throws IllegalStateException 规划地址为空或不符合固定路径约定
+     */
+    public String catalogReferenceUrl() {
+        return controlPlaneBaseUrl() + "/runtime-catalog-references";
+    }
+
+    private String controlPlaneBaseUrl() {
         if (url == null || url.isBlank()) {
             throw new IllegalStateException("Planning Gateway URL is not configured");
         }
@@ -41,6 +55,6 @@ public class PlanningGatewayProperties {
         if (!normalizedUrl.endsWith(suffix)) {
             throw new IllegalStateException("Planning Gateway URL must end with " + suffix);
         }
-        return normalizedUrl.substring(0, normalizedUrl.length() - "/planning/plans".length()) + "/runtime-registrations";
+        return normalizedUrl.substring(0, normalizedUrl.length() - "/planning/plans".length());
     }
 }

@@ -2,6 +2,7 @@ package com.kevin.mcp.cloud.employee;
 
 import com.google.gson.reflect.TypeToken;
 import com.kevin.mcp.cloud.configuration.ControlPlanePlanningProperties;
+import com.kevin.mcp.llm.LlmModelSelection;
 import com.kevin.mcp.util.GsonUtil;
 import org.springframework.stereotype.Component;
 
@@ -74,13 +75,13 @@ public class EmployeeLlmConfigClient {
     }
 
     /**
-     * 使用员工密钥查询 NewAPI 的第一个可用模型。
+     * 使用员工密钥查询 NewAPI 完整模型目录并按 endpoint 能力分配用途。
      *
      * @param config Tenant 返回的员工配置
-     * @return 默认模型名称
+     * @return 生成、向量和重排模型选择结果
      * @throws IOException 网络、状态码或响应格式异常
      */
-    public String resolveDefaultModel(EmployeeLlmConfig config) throws IOException {
+    public LlmModelSelection resolveModels(EmployeeLlmConfig config) throws IOException {
         validateEmployeeConfig(config, false);
         HttpURLConnection connection = openConnection(joinUrl(config.newapiUrl(), "/v1/models"), "GET",
                 properties.getLlmConnectTimeout().toMillis(), properties.getLlmReadTimeout().toMillis());
@@ -92,7 +93,7 @@ public class EmployeeLlmConfigClient {
             if (statusCode >= 400) {
                 throw new IOException("Employee LLM model request failed, status: " + statusCode);
             }
-            return parseFirstModel(responseBody);
+            return parseModels(responseBody, config.model());
         } finally {
             connection.disconnect();
         }
@@ -113,13 +114,13 @@ public class EmployeeLlmConfigClient {
         return config;
     }
 
-    private String parseFirstModel(String responseBody) throws IOException {
+    private LlmModelSelection parseModels(String responseBody, String preferredGenerationModel) throws IOException {
         Map<String, Object> response = parseObject(responseBody, "Employee LLM model response is invalid");
-        if (!(response.get("data") instanceof List<?> models) || models.isEmpty()
-                || !(models.getFirst() instanceof Map<?, ?> model)) {
-            throw new IOException("Employee LLM returned no available model");
+        try {
+            return LlmModelSelection.fromResponse(response, preferredGenerationModel);
+        } catch (IllegalStateException exception) {
+            throw new IOException(exception.getMessage(), exception);
         }
-        return requireText(textValue(model.get("id")), "Employee LLM returned an invalid model");
     }
 
     private Map<String, Object> parseObject(String responseBody, String message) throws IOException {

@@ -53,11 +53,13 @@ public class ExecutionPlanValidator {
             throw new IllegalStateException("Executable plan steps are empty");
         }
         Map<String, CapabilityDefinition> capabilities = readCapabilities(catalogJson);
-        validateSteps(steps, capabilities, Set.of(), false, "steps");
+        Set<String> semanticSources = readSemanticSources(catalogJson);
+        validateSteps(steps, capabilities, semanticSources, Set.of(), false, "steps");
     }
 
     private void validateSteps(List<?> rawSteps, Map<String, CapabilityDefinition> capabilities,
-                               Set<String> outerNames, boolean insideForeach, String path) {
+                               Set<String> semanticSources, Set<String> outerNames,
+                               boolean insideForeach, String path) {
         Set<String> declaredNames = new HashSet<>();
         List<Map<String, Object>> steps = new ArrayList<>();
         for (Object rawStep : rawSteps) {
@@ -75,12 +77,12 @@ public class ExecutionPlanValidator {
             String type = requireText(step.get("type"), path + ".type");
             validateDependencies(step.get("dependsOn"), visibleNames);
             if ("call".equals(type)) {
-                validateCall(step, capabilities, visibleNames, insideForeach, path);
+                validateCall(step, capabilities, semanticSources, visibleNames, insideForeach, path);
             } else if ("foreach".equals(type)) {
                 if (insideForeach) {
                     throw new IllegalStateException("Nested foreach is not supported");
                 }
-                validateForeach(step, capabilities, visibleNames, path);
+                validateForeach(step, capabilities, semanticSources, visibleNames, path);
             } else {
                 throw new IllegalStateException("Unsupported plan step type: " + type);
             }
@@ -93,7 +95,8 @@ public class ExecutionPlanValidator {
     }
 
     private void validateCall(Map<String, Object> step, Map<String, CapabilityDefinition> capabilities,
-                              Set<String> visibleNames, boolean insideForeach, String path) {
+                              Set<String> semanticSources, Set<String> visibleNames,
+                              boolean insideForeach, String path) {
         requireAllowedFields(step, CALL_FIELDS, path + ".call");
         if (step.containsKey("methodKey")) {
             throw new IllegalStateException("Cloud plan must not contain methodKey");
@@ -107,12 +110,24 @@ public class ExecutionPlanValidator {
         if (capability.version() != capabilityVersion) {
             throw new IllegalStateException("Capability version mismatch: " + capabilityId);
         }
+        if (!"READ_ONLY".equals(capability.operationMode())) {
+            throw new IllegalStateException("Write capability is not supported: " + capabilityId);
+        }
+        if (insideForeach && !"FOREACH_FALLBACK".equals(capability.batchMode())) {
+            throw new IllegalStateException("Capability does not allow foreach fallback: " + capabilityId);
+        }
         Map<String, Object> args = requireObject(step.get("args"), "args");
         validateArguments(args, capability.inputSchema(), visibleNames, insideForeach, capabilityId);
+        if ("WREN".equals(capability.executorType())) {
+            String sourceKey = requireText(args.get("sourceKey"), capabilityId + ".sourceKey");
+            if (!semanticSources.contains(sourceKey)) {
+                throw new IllegalStateException("Wren sourceKey is not present in Current MDL: " + sourceKey);
+            }
+        }
     }
 
     private void validateForeach(Map<String, Object> step, Map<String, CapabilityDefinition> capabilities,
-                                 Set<String> visibleNames, String path) {
+                                 Set<String> semanticSources, Set<String> visibleNames, String path) {
         requireAllowedFields(step, FOREACH_FIELDS, path + ".foreach");
         validateReference(requireText(step.get("itemsFrom"), "itemsFrom"), visibleNames, "itemsFrom");
         String itemAs = requireText(step.get("itemAs"), "itemAs");
@@ -128,7 +143,7 @@ public class ExecutionPlanValidator {
         }
         Set<String> bodyVisibleNames = new HashSet<>(visibleNames);
         bodyVisibleNames.add(itemAs);
-        validateSteps(body, capabilities, bodyVisibleNames, true, path + ".body");
+        validateSteps(body, capabilities, semanticSources, bodyVisibleNames, true, path + ".body");
     }
 
     private void validateArguments(Map<String, Object> args, Map<String, Object> schema,
@@ -242,11 +257,25 @@ public class ExecutionPlanValidator {
             Map<String, Object> inputSchema = item.containsKey("parameters")
                     ? requireObject(item.get("parameters"), "catalog parameters")
                     : requireObject(item.get("inputSchema"), "catalog inputSchema");
-            if (capabilities.putIfAbsent(id, new CapabilityDefinition(version, inputSchema)) != null) {
+            String operationMode = requireText(item.get("operationMode"), "catalog operationMode");
+            String batchMode = requireText(item.get("batchMode"), "catalog batchMode");
+            String executorType = requireText(item.get("executorType"), "catalog executorType");
+            if (capabilities.putIfAbsent(id,
+                    new CapabilityDefinition(version, inputSchema, operationMode, batchMode, executorType)) != null) {
                 throw new IllegalStateException("Duplicate Catalog capability: " + id);
             }
         }
         return capabilities;
+    }
+
+    private Set<String> readSemanticSources(String catalogJson) {
+        Object root = GsonUtil.fromJson(catalogJson, OBJECT_TYPE);
+        if (!(root instanceof Map<?, ?> catalog)
+                || !(catalog.get("semanticModel") instanceof Map<?, ?> semanticModel)
+                || !(semanticModel.get("sources") instanceof Map<?, ?> sources)) {
+            return Set.of();
+        }
+        return sources.keySet().stream().map(String::valueOf).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private void validateDependencies(Object value, Set<String> visibleNames) {
@@ -363,7 +392,11 @@ public class ExecutionPlanValidator {
      *
      * @param version 能力版本
      * @param inputSchema 能力输入 Schema
+     * @param operationMode 能力读写模式
+     * @param batchMode 能力批量调用方式
+     * @param executorType 能力执行器类型
      */
-    private record CapabilityDefinition(int version, Map<String, Object> inputSchema) {
+    private record CapabilityDefinition(int version, Map<String, Object> inputSchema,
+                                        String operationMode, String batchMode, String executorType) {
     }
 }

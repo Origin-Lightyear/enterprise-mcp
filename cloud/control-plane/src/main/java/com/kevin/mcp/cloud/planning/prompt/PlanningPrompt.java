@@ -87,6 +87,12 @@ public class PlanningPrompt {
                 6. foreach.itemsFrom 必须引用之前返回的集合；body 中只允许 call，循环结果可用 saveAs 保存。
                 7. 无法完成时返回 {"intent":"原始意图","steps":[],"error":"原因"}，不得猜测能力或参数。
                 8. intent 必须原样返回用户意图。
+                9. 第一版只能选择 operationMode=READ_ONLY 的能力，禁止生成任何写入、审批、创建、更新或删除计划。
+                10. executorType=WREN 的能力必须从 semanticModel.sources 选择一个真实 sourceKey，并且只接收该数据源的自然语言子问题，禁止传入完整混合需求或 SQL。
+                11. 一个 Wren 步骤只能访问一个 sourceKey；多表关联、聚合、CTE、子查询或 UNION 只能使用该数据源的 Models。跨数据源需求必须拆成多个 Wren call 步骤，再通过 fromStep 传递结构化结果。
+                12. 多项 API 输入优先选择 batchMode=BATCH 的能力；只有目标能力明确为 FOREACH_FALLBACK 时才允许 foreach。
+                13. 数据库术语、时间范围或目标对象存在实质歧义时返回 error 请求用户澄清，不得静默猜测。
+                14. 后续步骤通过 fromStep 使用 Wren 结果时，必须把所需字段含义追加到该 Wren 子问题中，但不得手工虚构独立输出契约。
 
                 输出必须满足以下 JSON Schema：
                 """ + OUTPUT_SCHEMA;

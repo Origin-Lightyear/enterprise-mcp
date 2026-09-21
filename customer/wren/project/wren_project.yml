@@ -1,0 +1,6 @@
+schema_version: 5
+name: customer_database
+catalog: customer
+schema: public
+# 由客户管理员在 Wren profile 中配置实际数据源；这里不保存账号和密码。
+data_source: mysql

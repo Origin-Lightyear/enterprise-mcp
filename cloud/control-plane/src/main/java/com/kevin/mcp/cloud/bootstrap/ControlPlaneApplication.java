@@ -4,6 +4,7 @@ import com.kevin.mcp.cloud.configuration.ControlPlanePlanningProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 启动独立的 Control Plane 应用。
@@ -13,6 +14,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  */
 @SpringBootApplication(scanBasePackages = "com.kevin.mcp.cloud")
 @EnableConfigurationProperties(ControlPlanePlanningProperties.class)
+@EnableScheduling
 public class ControlPlaneApplication {
 
     /**

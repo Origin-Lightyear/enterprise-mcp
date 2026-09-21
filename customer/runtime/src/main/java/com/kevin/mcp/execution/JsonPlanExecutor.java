@@ -1,22 +1,26 @@
 package com.kevin.mcp.execution;
 
+import com.kevin.mcp.catalog.RuntimeCatalog;
 import com.kevin.mcp.capability.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.processor.JsonExecutionPlan;
 import com.kevin.mcp.processor.JsonExecutionResult;
 import com.kevin.mcp.processor.JsonExecutionStep;
-import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.kevin.mcp.util.GsonUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Component;
 import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 
 /**
  * 执行结构化 JSON 调用计划。
@@ -30,6 +34,7 @@ public class JsonPlanExecutor {
 
     private final PrivateMcpToolSchemaRegistry registry;
     private ExecutionLimitsProperties limits;
+    private RuntimeCatalog runtimeCatalog;
 
     @Autowired
     public JsonPlanExecutor(PrivateMcpToolSchemaRegistry registry) {
@@ -45,6 +50,16 @@ public class JsonPlanExecutor {
         }
     }
 
+    /**
+     * 注入 Runtime Catalog 检查点；仅不启动 Spring 的执行器单元测试允许缺省。
+     *
+     * @param runtimeCatalogProvider Runtime Catalog provider
+     */
+    @Autowired(required = false)
+    public void configureRuntimeCatalog(ObjectProvider<RuntimeCatalog> runtimeCatalogProvider) {
+        this.runtimeCatalog = runtimeCatalogProvider.getIfAvailable();
+    }
+
     /** 注入执行资源预算。 */
     public JsonPlanExecutor(PrivateMcpToolSchemaRegistry registry, ExecutionLimitsProperties limits) {
         this.registry = registry;
@@ -58,7 +73,23 @@ public class JsonPlanExecutor {
      * @return 执行结果汇总
      */
     public JsonExecutionResult execute(JsonExecutionPlan plan) {
-        if (plan == null) throw new IllegalArgumentException("Plan must not be null");
+        return execute(plan, ExecutionProgressListener.NONE);
+    }
+
+    /**
+     * 按步骤顺序执行整份调用计划，并发送业务级进度事件。
+     *
+     * @param plan 待执行计划
+     * @param progressListener 进度监听器
+     * @return 执行结果汇总
+     */
+    public JsonExecutionResult execute(JsonExecutionPlan plan, ExecutionProgressListener progressListener) {
+        if (plan == null) {
+            throw new IllegalArgumentException("Plan must not be null");
+        }
+        requireCurrent(plan);
+        ExecutionProgressListener listener = progressListener == null
+                ? ExecutionProgressListener.NONE : progressListener;
         int declaredSteps = countSteps(plan.steps());
         if (declaredSteps > limits.getMaxSteps()) {
             throw new IllegalArgumentException("Plan exceeds maximum steps: " + limits.getMaxSteps());
@@ -66,12 +97,15 @@ public class JsonPlanExecutor {
         long deadline = System.nanoTime() + limits.getTimeout().toNanos();
         Map<String, Object> stepResults = new LinkedHashMap<>();
         List<String> executedSteps = new ArrayList<>();
-        Object finalResult = this.executeSteps(plan.steps(), stepResults, null, executedSteps, true, deadline);
-        if (System.nanoTime() > deadline) throw new IllegalStateException("Plan execution timed out");
+        listener.planStarted(plan.steps().size());
+        Object finalResult = this.executeSteps(plan, plan.steps(), stepResults, null, executedSteps,
+                true, deadline, listener);
+        verifyActive(deadline);
+        requireCurrent(plan);
         if (GsonUtil.toJson(finalResult).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > limits.getMaxResultBytes()) {
             throw new IllegalStateException("Plan result exceeds maximum bytes");
         }
-        return new JsonExecutionResult(
+        JsonExecutionResult result = new JsonExecutionResult(
                 plan.planId(),
                 plan.intent(),
                 true,
@@ -79,6 +113,8 @@ public class JsonPlanExecutor {
                 Map.copyOf(stepResults),
                 List.copyOf(executedSteps)
         );
+        listener.planCompleted();
+        return result;
     }
 
     /**
@@ -89,21 +125,31 @@ public class JsonPlanExecutor {
      * @param currentItem 当前循环元素；不在 foreach 中时为 null
      * @param executedSteps 执行轨迹
      * @param recordExecutedSteps 是否记录当前层级步骤到执行轨迹
+     * @param deadline 当前计划的单调时钟截止时间
+     * @param progressListener 业务级进度监听器
      * @return 最后一个步骤的执行结果
      */
     private Object executeSteps(
+            JsonExecutionPlan plan,
             List<JsonExecutionStep> steps,
             Map<String, Object> visibleValues,
             Object currentItem,
             List<String> executedSteps,
             boolean recordExecutedSteps,
-            long deadline
+            long deadline,
+            ExecutionProgressListener progressListener
     ) {
         Object finalResult = null;
         for (JsonExecutionStep step : steps) {
-            if (System.nanoTime() > deadline) throw new IllegalStateException("Plan execution timed out");
+            verifyActive(deadline);
+            requireCurrent(plan);
+            if (recordExecutedSteps) {
+                progressListener.stepStarted(executedSteps.size() + 1, steps.size());
+            }
             this.verifyDependencies(step, visibleValues);
-            finalResult = this.executeStep(step, visibleValues, currentItem, executedSteps, deadline);
+            finalResult = this.executeStep(plan, step, visibleValues, currentItem, executedSteps, deadline,
+                    progressListener);
+            requireCurrent(plan);
             visibleValues.put(step.id(), finalResult);
             if (step.saveAs() != null) {
                 visibleValues.put(step.saveAs(), finalResult);
@@ -122,20 +168,25 @@ public class JsonPlanExecutor {
      * @param visibleValues 当前作用域可见结果集
      * @param currentItem 当前循环元素
      * @param executedSteps 执行轨迹
+     * @param deadline 当前计划的单调时钟截止时间
+     * @param progressListener 业务级进度监听器
      * @return 当前步骤结果
      */
     private Object executeStep(
+            JsonExecutionPlan plan,
             JsonExecutionStep step,
             Map<String, Object> visibleValues,
             Object currentItem,
-            List<String> executedSteps
-            , long deadline
+            List<String> executedSteps,
+            long deadline,
+            ExecutionProgressListener progressListener
     ) {
         if (step.isCall()) {
             return this.invokeCall(step, visibleValues, currentItem);
         }
         if (step.isForeach()) {
-            return this.executeForeach(step, visibleValues, currentItem, executedSteps, deadline);
+            return this.executeForeach(plan, step, visibleValues, currentItem, executedSteps, deadline,
+                    progressListener);
         }
         throw new IllegalArgumentException("Unsupported step type: " + step.type());
     }
@@ -188,6 +239,15 @@ public class JsonPlanExecutor {
         try {
             ReflectionUtils.makeAccessible(method);
             return method.invoke(bean, arguments);
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("Failed to invoke step: " + step.id(), cause);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to invoke step: " + step.id(), exception);
         }
@@ -200,14 +260,18 @@ public class JsonPlanExecutor {
      * @param visibleValues 当前作用域可见结果集
      * @param currentItem 当前外层循环元素
      * @param executedSteps 执行轨迹
+     * @param deadline 当前计划的单调时钟截止时间
+     * @param progressListener 业务级进度监听器
      * @return 聚合后的循环结果列表
      */
     private Object executeForeach(
+            JsonExecutionPlan plan,
             JsonExecutionStep step,
             Map<String, Object> visibleValues,
             Object currentItem,
-            List<String> executedSteps
-            , long deadline
+            List<String> executedSteps,
+            long deadline,
+            ExecutionProgressListener progressListener
     ) {
         Object collection = this.resolveStepReference(step.itemsFrom(), visibleValues);
         List<Object> items = this.asItemList(collection, step.id());
@@ -215,19 +279,43 @@ public class JsonPlanExecutor {
         if (items.size() > limits.getMaxLoopIterations()) {
             throw new IllegalArgumentException("foreach exceeds maximum iterations: " + limits.getMaxLoopIterations());
         }
-        for (Object item : items) {
+        progressListener.foreachStarted(items.size());
+        for (int index = 0; index < items.size(); index++) {
+            verifyActive(deadline);
+            requireCurrent(plan);
+            Object item = items.get(index);
             Map<String, Object> iterationValues = new LinkedHashMap<>(visibleValues);
             iterationValues.put(step.itemAs(), item);
-            Object iterationResult = this.executeSteps(step.body(), iterationValues, item, executedSteps, false, deadline);
+            Object iterationResult = this.executeSteps(plan, step.body(), iterationValues, item, executedSteps,
+                    false, deadline, progressListener);
+            requireCurrent(plan);
             loopResults.add(iterationResult);
+            progressListener.foreachProgress(index + 1, items.size());
         }
         return List.copyOf(loopResults);
     }
 
     private int countSteps(List<JsonExecutionStep> steps) {
         int total = 0;
-        for (JsonExecutionStep step : steps) total += 1 + (step.isForeach() ? countSteps(step.body()) : 0);
+        for (JsonExecutionStep step : steps) {
+            total += 1 + (step.isForeach() ? countSteps(step.body()) : 0);
+        }
         return total;
+    }
+
+    private void verifyActive(long deadline) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("Plan execution was cancelled");
+        }
+        if (System.nanoTime() > deadline) {
+            throw new IllegalStateException("Plan execution timed out");
+        }
+    }
+
+    private void requireCurrent(JsonExecutionPlan plan) {
+        if (runtimeCatalog != null) {
+            runtimeCatalog.requireExecutable(plan);
+        }
     }
 
     /**

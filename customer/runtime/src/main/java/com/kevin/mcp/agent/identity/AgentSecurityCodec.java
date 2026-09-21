@@ -74,7 +74,8 @@ public class AgentSecurityCodec {
         return new TenantRequestInfo(
                 tenantObject.get("tenantId").getAsString(),
                 tenantObject.get("employeeId").getAsString(),
-                tenantObject.get("versionNumber").getAsLong()
+                tenantObject.get("versionNumber").getAsLong(),
+                tenantObject.get("mcpInstanceId").getAsString()
         );
     }
 
@@ -82,16 +83,20 @@ public class AgentSecurityCodec {
      * 验证 Authorization 中的签名是否与当前请求头一致。
      *
      * @param tenantHeader Base32 编码后的租户上下文
+     * @param mcpInstanceId 目标 Runtime 实例标识
      * @param timestamp 请求时间戳
+     * @param expiresAt 凭证过期时间戳
      * @param nonce 请求随机数
      * @param signature Base64 编码后的签名结果
      * @return 验签是否通过
      */
-    public boolean verifySignature(String tenantHeader, String timestamp, String nonce, String signature) {
+    public boolean verifySignature(String tenantHeader, String mcpInstanceId, String timestamp, String expiresAt,
+                                   String nonce, String signature) {
         try {
             Signature verifier = Signature.getInstance("SHA256withRSA");
             verifier.initVerify(this.publicKey);
-            verifier.update(buildPayload(tenantHeader, timestamp, nonce).getBytes(StandardCharsets.UTF_8));
+            verifier.update(buildPayload(tenantHeader, mcpInstanceId, timestamp, expiresAt, nonce)
+                    .getBytes(StandardCharsets.UTF_8));
             return verifier.verify(Base64.getDecoder().decode(signature));
         } catch (Exception exception) {
             return false;
@@ -111,15 +116,35 @@ public class AgentSecurityCodec {
     }
 
     /**
+     * 校验 Platform 签发时间和显式过期时间，拒绝超长或已过期凭证。
+     *
+     * @param issuedAtEpochSeconds 签发 Unix 秒时间戳
+     * @param expiresAtEpochSeconds 过期 Unix 秒时间戳
+     * @param maximumLifetimeSeconds Runtime 接受的最长凭证生命周期
+     * @return 凭证时间窗口是否合法
+     */
+    public boolean isCredentialTimeAllowed(long issuedAtEpochSeconds, long expiresAtEpochSeconds,
+                                           long maximumLifetimeSeconds) {
+        long now = Instant.now(Clock.systemUTC()).getEpochSecond();
+        return expiresAtEpochSeconds >= now
+                && expiresAtEpochSeconds >= issuedAtEpochSeconds
+                && expiresAtEpochSeconds - issuedAtEpochSeconds <= maximumLifetimeSeconds;
+    }
+
+    /**
      * 生成签名与验签共用的规范化原文，避免双方拼接顺序不一致。
      *
      * @param tenantHeader Base32 编码后的租户上下文
+     * @param mcpInstanceId 目标 Runtime 实例标识
      * @param timestamp 请求时间戳
+     * @param expiresAt 凭证过期时间戳
      * @param nonce 请求随机数
      * @return 规范化原文
      */
-    public String buildPayload(String tenantHeader, String timestamp, String nonce) {
-        return "Tenant=" + tenantHeader + "&Timestamp=" + timestamp + "&Nonce=" + nonce;
+    public String buildPayload(String tenantHeader, String mcpInstanceId, String timestamp, String expiresAt,
+                               String nonce) {
+        return "Tenant=" + tenantHeader + "&McpInstanceId=" + mcpInstanceId + "&Timestamp=" + timestamp
+                + "&ExpiresAt=" + expiresAt + "&Nonce=" + nonce;
     }
 
     static String sha256Fingerprint(byte[] encodedKey) {

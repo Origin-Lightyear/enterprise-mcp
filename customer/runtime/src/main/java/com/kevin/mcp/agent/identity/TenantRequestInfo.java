@@ -6,8 +6,9 @@ package com.kevin.mcp.agent.identity;
  * @param tenantId 租户标识
  * @param employeeId 员工标识
  * @param versionNumber 当前租户数据版本号
+ * @param mcpInstanceId Platform 签名时绑定的目标 Runtime 实例
  * @author Kevin
  * @date 2026-07-29
  */
-public record TenantRequestInfo(String tenantId, String employeeId, long versionNumber) {
+public record TenantRequestInfo(String tenantId, String employeeId, long versionNumber, String mcpInstanceId) {
 }

@@ -6,7 +6,7 @@
 
 | 部署位置 | 主模块 | 最终产物 | 作用 |
 |---|---|---|---|
-| 厂商云端 | `cloud/control-plane` | `enterprise-mcp-control-plane-0.0.1-SNAPSHOT.jar` | 保存规划目录，调用 LLM 生成调用链并签名 |
+| 厂商云端 | `cloud/control-plane` | `enterprise-mcp-control-plane-0.0.1-SNAPSHOT.jar` | 保存规划目录，调用员工 LLM 生成并校验调用链 |
 | 客户内网 | `customer/app` | `customer-enterprise-mcp-1.0.0.jar` | 暴露 MCP、校验权限并调用客户数据库或 API |
 
 客户只部署 `customer/app` 生成的一个 Fat JAR。`shared/contract` 和 `customer/runtime` 会作为依赖打进该 JAR，不需要在客户服务器单独部署。
@@ -34,7 +34,7 @@ cloud/control-plane ----------------> shared/contract
 
 - 新增或修改客户对外 `@McpTool`、内部 `@PrivateMcpTool`、Mapper、SQL、内部 API Adapter：改 `customer/app`。
 - 修改本地计划执行、多数据源连接、安全校验、审计：改 `customer/runtime`。
-- 修改云端 LLM 规划、目录发布、Runtime 注册、计划签名：改 `cloud/control-plane`。
+- 修改云端 LLM 规划、Catalog/Runtime 注册和计划结构校验：改 `cloud/control-plane`。
 - 修改两侧共同使用的注解、计划 DTO、签名信封：改 `shared/contract`。
 
 ## 一次构建
@@ -87,4 +87,4 @@ java -jar customer/app/target/customer-enterprise-mcp-1.0.0.jar
 
 配置入口是 `customer/app/src/main/resources/application.yml`。数据库和 API 通过 `enterprise.resources.profiles` 配置，密码和 Token 必须来自环境变量、JVM 属性或客户 Secret Provider，不能提交到仓库。
 
-详细说明见 [模块开发与打包指南](docs/module-development-and-packaging-guide.md)，完整阶段计划见 [多客户内部 MCP 与跨系统执行架构开发计划](docs/architecture/multi-customer-mcp-development-plan.md)。
+全部文档及用途见 [文档目录](docs/文档目录.md)。系统架构、流程、数据流、时序、启动、部署和升级统一见 [系统说明](docs/系统说明.md)。模块开发说明见 [模块开发与打包指南](docs/模块开发与打包指南.md)，完整阶段计划见 [多客户 MCP 与跨系统执行开发计划](docs/架构设计/多客户MCP与跨系统执行开发计划.md)。

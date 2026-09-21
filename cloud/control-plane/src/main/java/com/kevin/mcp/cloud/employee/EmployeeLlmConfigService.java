@@ -1,6 +1,7 @@
 package com.kevin.mcp.cloud.employee;
 
 import com.kevin.mcp.cloud.configuration.ControlPlanePlanningProperties;
+import com.kevin.mcp.llm.LlmModelSelection;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -74,7 +75,7 @@ public class EmployeeLlmConfigService {
      *
      * @param tenantId 租户标识
      * @param employeeId 员工标识
-     * @return 已解析默认模型的员工 LLM 调用配置
+     * @return 已按 endpoint 能力解析模型角色的员工 LLM 调用配置
      * @throws IOException Tenant 或 NewAPI 调用失败
      */
     public EmployeeLlmInvocationConfig getConfig(String tenantId, String employeeId) throws IOException {
@@ -94,10 +95,10 @@ public class EmployeeLlmConfigService {
             }
 
             EmployeeLlmConfig employeeConfig = configClient.fetchConfig(cacheKey.tenantId(), cacheKey.employeeId());
-            String model = isBlank(employeeConfig.model())
-                    ? configClient.resolveDefaultModel(employeeConfig) : employeeConfig.model().trim();
+            LlmModelSelection models = configClient.resolveModels(employeeConfig);
             EmployeeLlmInvocationConfig invocationConfig = new EmployeeLlmInvocationConfig(
-                    employeeConfig.newapiUrl().trim(), employeeConfig.apiKey().trim(), model);
+                    employeeConfig.newapiUrl().trim(), employeeConfig.apiKey().trim(), models.generationModel(),
+                    models.embeddingModel(), models.rerankModel());
             synchronized (capacityLock) {
                 removeExpiredEntries(now);
                 ensureCapacity(cacheKey);

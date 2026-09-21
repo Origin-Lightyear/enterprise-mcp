@@ -6,6 +6,8 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.ai.mcp.annotation.context.McpSyncRequestContext;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 /**
  * 暴露当前客户的企业内部系统聚合查询 MCP Tool。
  *
@@ -36,11 +38,11 @@ public class CustomerInternalMcpTool {
      * @return 查询结果或权限拒绝提示
      */
     @McpTool(
-            name = "select_all",
+            name = "linko_ent",
             description = "查询企业内部各系统数据，如报表、销售、客户、订单、门店、员工、部门、财务、产品等数据",
             generateOutputSchema = true
     )
-    public String selectAll(
+    public Map<Boolean, String> linkoEnt(
             @McpToolParam(description = "查询内容") String message,
             McpSyncRequestContext requestContext
     ) {

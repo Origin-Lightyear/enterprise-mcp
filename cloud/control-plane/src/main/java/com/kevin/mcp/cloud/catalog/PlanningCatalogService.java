@@ -1,19 +1,21 @@
 package com.kevin.mcp.cloud.catalog;
 
+import com.kevin.mcp.catalog.CatalogSnapshotCodec;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 保存 Runtime 上报的完整能力 Schema，并按 JAR 摘要提供规划查询。
+ * 确认不可变 Catalog Snapshot，并维护 Runtime 当前实际引用。
  *
  * @author Kevin
  * @date 2026-09-11
@@ -25,75 +27,128 @@ public class PlanningCatalogService {
     private final PlanningCatalogRepository repository;
     private final ConcurrentHashMap<String, PlanningCatalog> catalogCache = new ConcurrentHashMap<>();
 
-    /** 使用内存仓储构造服务，供单元测试使用。 */
+    @Value("${enterprise.control-plane.catalog-retention-grace:10m}")
+    private Duration retentionGrace = Duration.ofMinutes(10);
+
+    /**
+     * 使用内存 adapter 构造模块，供接口级测试使用。
+     */
     public PlanningCatalogService() {
         this(new InMemoryPlanningCatalogRepository());
     }
 
-    /** 注入持久化仓储。 */
+    /**
+     * 注入持久化 adapter。
+     *
+     * @param repository Catalog 持久化 adapter
+     */
     @Autowired
     public PlanningCatalogService(PlanningCatalogRepository repository) {
         this.repository = repository;
     }
 
-    /** 保存 Runtime 注册和完整 Catalog；同一 JAR 摘要不能绑定不同 Schema。 */
+    /**
+     * 独立规范化、复算并确认不可变 Catalog Snapshot。
+     *
+     * @param candidate Runtime 上传的完整候选快照
+     * @return Control Plane 确认结果
+     * @throws IllegalArgumentException 字段缺失、Schema 无效或摘要不一致
+     */
     @Transactional
-    public RuntimeRegistration registerRuntime(RuntimeRegistration registration) {
-        if (registration == null || isBlank(registration.tenantId()) || isBlank(registration.instanceId())
-                || isBlank(registration.artifactVersion()) || isBlank(registration.artifactDigest())
-                || isBlank(registration.catalogJson())) {
+    public CatalogConfirmation confirm(CatalogCandidate candidate) {
+        if (candidate == null || isBlank(candidate.tenantId()) || isBlank(candidate.instanceId())
+                || isBlank(candidate.artifactVersion()) || isBlank(candidate.artifactDigest())
+                || isBlank(candidate.catalogDigest()) || isBlank(candidate.catalogJson())) {
             throw new IllegalArgumentException("Runtime identity, artifact and catalog fields are required");
         }
-        CatalogCapabilityReader.read(registration.catalogJson());
-        String catalogDigest = sha256(registration.catalogJson());
-        Optional<PlanningCatalog> existing = repository.findCatalog(registration.tenantId(), registration.artifactDigest());
-        if (existing.isEmpty()) {
-            PlanningCatalog catalog = new PlanningCatalog(registration.tenantId(), registration.artifactVersion(),
-                    registration.artifactDigest(), catalogDigest, registration.catalogJson(), Instant.now());
-            repository.createCatalog(catalog);
-            catalogCache.put(cacheKey(registration.tenantId(), registration.artifactDigest()), catalog);
-        } else if (!existing.get().catalogDigest().equals(catalogDigest)) {
-            throw new IllegalStateException("Artifact digest is already bound to a different catalog schema");
-        } else {
-            catalogCache.put(cacheKey(registration.tenantId(), registration.artifactDigest()), existing.get());
+        String canonicalJson = CatalogSnapshotCodec.canonicalize(candidate.catalogJson());
+        CatalogCapabilityReader.read(canonicalJson);
+        String catalogDigest = CatalogSnapshotCodec.digest(canonicalJson);
+        if (!catalogDigest.equals(candidate.catalogDigest())) {
+            throw new IllegalArgumentException("Catalog digest does not match canonical Catalog JSON");
         }
-        return repository.saveRegistration(registration);
+        Optional<PlanningCatalog> existing = repository.findCatalog(candidate.tenantId(), catalogDigest);
+        if (existing.isEmpty()) {
+            PlanningCatalog catalog = new PlanningCatalog(candidate.tenantId(), catalogDigest, canonicalJson, Instant.now());
+            repository.createCatalog(catalog);
+            catalogCache.put(cacheKey(candidate.tenantId(), catalogDigest), catalog);
+        } else if (!existing.get().catalogJson().equals(canonicalJson)) {
+            throw new IllegalStateException("Catalog digest is already bound to different canonical content");
+        } else {
+            catalogCache.put(cacheKey(candidate.tenantId(), catalogDigest), existing.get());
+        }
+        return new CatalogConfirmation(catalogDigest, Instant.now());
     }
 
-    /** 查询租户和 JAR 摘要对应的完整能力 Schema。 */
-    public Optional<PlanningCatalog> find(String tenantId, String artifactDigest) {
-        PlanningCatalog cached = catalogCache.get(cacheKey(tenantId, artifactDigest));
-        return cached == null ? repository.findCatalog(tenantId, artifactDigest)
+    /**
+     * 更新 Runtime 已在本地提交的当前 Catalog 引用。
+     *
+     * @param reference Runtime 当前实际引用
+     * @return 已保存引用
+     * @throws IllegalArgumentException 字段缺失或 Catalog 尚未确认
+     */
+    @Transactional
+    public RuntimeRegistration reference(RuntimeCatalogReference reference) {
+        if (reference == null || isBlank(reference.tenantId()) || isBlank(reference.instanceId())
+                || isBlank(reference.artifactVersion()) || isBlank(reference.artifactDigest())
+                || isBlank(reference.catalogDigest())) {
+            throw new IllegalArgumentException("Runtime identity, artifact and catalog reference fields are required");
+        }
+        if (find(reference.tenantId(), reference.catalogDigest()).isEmpty()) {
+            throw new IllegalArgumentException("Catalog Snapshot must be confirmed before it is referenced");
+        }
+        return repository.saveRegistration(new RuntimeRegistration(reference.tenantId(), reference.instanceId(),
+                reference.artifactVersion(), reference.artifactDigest(), reference.catalogDigest()));
+    }
+
+    /**
+     * 按精确摘要查询租户 Catalog Snapshot。
+     *
+     * @param tenantId 租户编号
+     * @param catalogDigest Catalog Digest
+     * @return 匹配快照
+     */
+    public Optional<PlanningCatalog> find(String tenantId, String catalogDigest) {
+        PlanningCatalog cached = catalogCache.get(cacheKey(tenantId, catalogDigest));
+        return cached == null ? repository.findCatalog(tenantId, catalogDigest)
                 .map(catalog -> {
-                    catalogCache.put(cacheKey(tenantId, artifactDigest), catalog);
+                    catalogCache.put(cacheKey(tenantId, catalogDigest), catalog);
                     return catalog;
                 }) : Optional.of(cached);
     }
 
-    /** 查询已注册的 Runtime 实例。 */
-    public Optional<RuntimeRegistration> findRegistration(String tenantId, String instanceId, String artifactDigest) {
-        return repository.findRegistration(tenantId, instanceId, artifactDigest);
+    /**
+     * 查询已绑定精确制品和 Catalog 的 Runtime 实例。
+     *
+     * @param tenantId 租户编号
+     * @param instanceId Runtime 实例编号
+     * @param artifactDigest 制品摘要
+     * @param catalogDigest Catalog Digest
+     * @return 匹配引用
+     */
+    public Optional<RuntimeRegistration> findRegistration(String tenantId, String instanceId, String artifactDigest,
+                                                          String catalogDigest) {
+        return repository.findRegistration(tenantId, instanceId, artifactDigest, catalogDigest);
     }
 
-    private String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(digest.length * 2);
-            for (byte item : digest) {
-                hex.append(String.format("%02x", item));
-            }
-            return "sha256:" + hex;
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
+    /**
+     * 清理超过宽限期且不再被 Runtime 引用的 Catalog Snapshot。
+     *
+     * @return 实际删除数量
+     */
+    @Transactional
+    @Scheduled(fixedDelayString = "${enterprise.control-plane.catalog-cleanup-delay:1h}")
+    public int cleanupUnreferenced() {
+        List<PlanningCatalog> deleted = repository.deleteUnreferencedBefore(Instant.now().minus(retentionGrace));
+        deleted.forEach(catalog -> catalogCache.remove(cacheKey(catalog.tenantId(), catalog.catalogDigest()), catalog));
+        return deleted.size();
     }
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
-    private String cacheKey(String tenantId, String artifactDigest) {
-        return tenantId + ":" + artifactDigest;
+    private String cacheKey(String tenantId, String catalogDigest) {
+        return tenantId + ":" + catalogDigest;
     }
 }
