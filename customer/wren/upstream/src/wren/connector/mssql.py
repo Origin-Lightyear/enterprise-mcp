@@ -436,6 +436,8 @@ def _connect_mssql_pyodbc(
     if pyodbc is None:  # pragma: no cover
         raise WrenError(ErrorCode.GET_CONNECTION_ERROR, "pyodbc is required for MSSQL")
 
+    driver = _resolve_mssql_driver(driver)
+
     connect_kwargs = dict(kwargs) if kwargs else {}
     statement_timeout = connect_kwargs.pop("statement_timeout", None)
     # Validate statement_timeout before opening the connection so a bad
@@ -478,6 +480,31 @@ def _connect_mssql_pyodbc(
         connection.timeout = statement_timeout
 
     return connection
+
+
+def _resolve_mssql_driver(requested: str) -> str:
+    """将默认驱动版本回退到操作系统实际安装的 17 或 18。"""
+    drivers_fn = getattr(pyodbc, "drivers", None)
+    if not callable(drivers_fn):
+        return requested
+    installed = set(drivers_fn())
+    if requested in installed:
+        return requested
+    standard_drivers = {
+        "ODBC Driver 18 for SQL Server",
+        "ODBC Driver 17 for SQL Server",
+    }
+    if requested in standard_drivers:
+        for candidate in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
+            if candidate in installed:
+                return candidate
+    if requested in standard_drivers and installed:
+        raise WrenError(
+            ErrorCode.INVALID_CONNECTION_INFO,
+            "SQL Server ODBC driver is not installed: "
+            f"{requested}. Available drivers: {', '.join(sorted(installed))}",
+        )
+    return requested
 
 
 def _escape_odbc_value(value: str) -> str:

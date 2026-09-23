@@ -44,3 +44,19 @@ export async function logout() {
     sessionStorage.removeItem('wren.csrf');
   }
 }
+
+export async function downloadBackup(): Promise<Blob> {
+  const headers = new Headers({ Accept: 'application/zip' });
+  const response = await fetch('/internal/wren/admin/backup', { headers, credentials: 'same-origin' });
+  if (!response.ok) throw new ApiError(response.status, 'BACKUP_FAILED', '备份下载失败');
+  return response.blob();
+}
+
+export async function restoreBackup(file: File): Promise<{ restored: boolean; requiresCatalogSync: boolean }> {
+  const headers = new Headers({ 'Content-Type': 'application/zip' });
+  if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
+  const response = await fetch('/internal/wren/admin/restore', { method: 'POST', headers, credentials: 'same-origin', body: file });
+  const body = await response.json().catch(() => ({ message: response.statusText }));
+  if (!response.ok) throw new ApiError(response.status, body.code || 'RESTORE_FAILED', body.data?.error || body.message || '恢复失败');
+  return body.data;
+}

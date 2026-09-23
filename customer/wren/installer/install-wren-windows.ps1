@@ -10,7 +10,7 @@ param(
     [ValidateRange(1, 65535)]
     [int]$Port = 8091,
     [ValidatePattern('^[a-z0-9_,.-]*$')]
-    [string]$Extras = "",
+    [string]$Extras = "mysql,postgres,mssql",
     [string]$EnvironmentFile = "",
     [string]$ProfileFile = "",
     [ValidateRange(1, 600)]
@@ -233,7 +233,7 @@ if (-not $InstanceId) {
     Invoke-InteractiveWizard
 }
 $SourceDir = (Resolve-Path -LiteralPath $SourceDir).Path
-foreach ($requiredPath in @("adapter\server.py", "upstream\pyproject.toml")) {
+foreach ($requiredPath in @("adapter\server.py", "upstream\pyproject.toml", "launcher\ensure_dependencies.py")) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourceDir $requiredPath))) {
         throw "Wren 交付目录缺少文件: $requiredPath"
     }
@@ -277,6 +277,8 @@ Remove-ManagedPath -Path $StagingDir
 New-Item -ItemType Directory -Path $StagingDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $SourceDir "adapter") -Destination $StagingDir -Recurse
 Copy-Item -LiteralPath (Join-Path $SourceDir "upstream") -Destination $StagingDir -Recurse
+New-Item -ItemType Directory -Force -Path (Join-Path $StagingDir "launcher") | Out-Null
+Copy-Item -LiteralPath (Join-Path $SourceDir "launcher\ensure_dependencies.py") -Destination (Join-Path $StagingDir "launcher")
 if (Test-Path -LiteralPath (Join-Path $SourceDir "NOTICE.md")) {
     Copy-Item -LiteralPath (Join-Path $SourceDir "NOTICE.md") -Destination $StagingDir
 }
@@ -365,6 +367,7 @@ $environmentPathLiteral = ConvertTo-SingleQuotedLiteral $InstalledEnvironmentFil
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 $pythonPathLiteral = ConvertTo-SingleQuotedLiteral $VenvPython
 $serverPathLiteral = ConvertTo-SingleQuotedLiteral (Join-Path $RuntimeDir "adapter\server.py")
+$dependencyCheckerLiteral = ConvertTo-SingleQuotedLiteral (Join-Path $RuntimeDir "launcher\ensure_dependencies.py")
 $pythonModulePathLiteral = ConvertTo-SingleQuotedLiteral (Join-Path $RuntimeDir "upstream\src")
 $projectPathLiteral = ConvertTo-SingleQuotedLiteral $ProjectRoot
 $statePathLiteral = ConvertTo-SingleQuotedLiteral $StateRoot
@@ -386,6 +389,8 @@ foreach (`$line in Get-Content -LiteralPath '$environmentPathLiteral' -ErrorActi
 `$env:WREN_INSTANCE_DIR = '$statePathLiteral'
 `$env:WREN_ADAPTER_HOST = '127.0.0.1'
 `$env:WREN_ADAPTER_PORT = '$Port'
+& '$pythonPathLiteral' '$dependencyCheckerLiteral' '$RuntimeDir\upstream' *>> '$logPathLiteral'
+if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }
 & '$pythonPathLiteral' '$serverPathLiteral' *>> '$logPathLiteral'
 exit `$LASTEXITCODE
 "@

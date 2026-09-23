@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -12,11 +13,13 @@ import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import dotenv_values
 
 from wren.connector.factory import get_connector
 from wren.context import build_json, load_models, load_relationships, save_project_config
@@ -42,6 +45,26 @@ PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$")
 SECRET_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_$-]{0,127}$")
 LOGGER = logging.getLogger(__name__)
+BACKUP_FORMAT_VERSION = 1
+MAX_BACKUP_BYTES = 50 * 1024 * 1024
+MAX_BACKUP_ENTRIES = 20_000
+MAX_BACKUP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
+
+
+def _default_mssql_driver() -> str:
+    """选择当前操作系统实际已安装的 SQL Server ODBC Driver。"""
+    try:
+        import pyodbc
+    except ImportError as exception:
+        raise RuntimeError("MSSQL 需要 pyodbc，请先运行 Wren 启动脚本补齐依赖") from exception
+    installed = set(pyodbc.drivers())
+    for driver in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
+        if driver in installed:
+            return driver
+    raise RuntimeError(
+        "未找到 Microsoft ODBC Driver 17/18 for SQL Server，"
+        f"当前驱动: {', '.join(sorted(installed)) or '无'}"
+    )
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -178,6 +201,132 @@ class AdminService:
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
+    def create_backup(self) -> bytes:
+        """打包可恢复的数据源凭据、建模草稿和 Current MDL。"""
+        manifest = {"format": "enterprise-mcp-wren-backup", "version": BACKUP_FORMAT_VERSION,
+                    "includes": [".wren/profiles.yml", ".wren/.env", "projects/modeling", "projects/current"]}
+        output = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+            roots = [(self.instance_home / ".wren" / "profiles.yml", ".wren/profiles.yml"),
+                     (self.env_file, ".wren/.env")]
+            for root, prefix in roots:
+                if root.is_file():
+                    if root.is_symlink():
+                        raise ValueError("backup contains a symbolic link")
+                    archive.write(root, prefix)
+            for directory, prefix in ((self.modeling_dir, "projects/modeling"), (self.current_dir, "projects/current")):
+                if directory.is_dir():
+                    for path in sorted(directory.rglob("*")):
+                        if path.is_file():
+                            if path.is_symlink():
+                                raise ValueError("backup contains a symbolic link")
+                            archive.write(path, str(Path(prefix) / path.relative_to(directory)))
+        output.seek(0)
+        try:
+            data = output.read()
+        finally:
+            output.close()
+        if len(data) > MAX_BACKUP_BYTES:
+            raise ValueError("backup is too large")
+        self._audit("BACKUP_CREATED", "wren", "SUCCEEDED")
+        return data
+
+    def restore_backup(self, data: bytes) -> dict[str, Any]:
+        """校验并原子恢复备份，失败时保留原有运行数据。"""
+        if not data or len(data) > MAX_BACKUP_BYTES:
+            raise ValueError("backup is missing or too large")
+        runtime_lock = getattr(self.runtime, "_lock", threading.RLock())
+        with self._lock, runtime_lock:
+            old_secrets = dotenv_values(self.env_file) if self.env_file.is_file() else {}
+            staging = Path(tempfile.mkdtemp(prefix="wren-restore-", dir=self.instance_home))
+            moved: list[tuple[Path, Path]] = []
+            installed: list[Path] = []
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    entries = archive.infolist()
+                    if len(entries) > MAX_BACKUP_ENTRIES:
+                        raise ValueError("backup contains too many files")
+                    total = 0
+                    names: set[str] = set()
+                    for info in entries:
+                        name = info.filename.replace("\\", "/")
+                        parts = name.split("/")
+                        if name in names or name.startswith("/") or "\\" in info.filename or ":" in name or any(part in {"", ".", ".."} for part in parts):
+                            raise ValueError("backup contains an unsafe path")
+                        names.add(name)
+                        if info.is_dir():
+                            raise ValueError("backup contains an unsupported directory entry")
+                        if info.external_attr >> 16 & 0o170000 == 0o120000:
+                            raise ValueError("backup contains a symbolic link")
+                        if name == "manifest.json":
+                            continue
+                        if name not in {".wren/profiles.yml", ".wren/.env"} and not name.startswith(("projects/modeling/", "projects/current/")):
+                            raise ValueError("backup contains an unsupported file")
+                        total += info.file_size
+                        if total > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                            raise ValueError("backup expands to too many bytes")
+                    try:
+                        manifest = json.loads(archive.read("manifest.json"))
+                    except Exception as exception:
+                        raise ValueError("backup manifest is invalid") from exception
+                    if manifest.get("format") != "enterprise-mcp-wren-backup" or manifest.get("version") != BACKUP_FORMAT_VERSION:
+                        raise ValueError("backup format is unsupported")
+                    if "manifest.json" not in names:
+                        raise ValueError("backup manifest is missing")
+                    for info in entries:
+                        if info.filename == "manifest.json":
+                            continue
+                        target = staging / info.filename
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.open(info) as source, target.open("wb") as output:
+                            copied = 0
+                            while chunk := source.read(1024 * 1024):
+                                copied += len(chunk)
+                                if copied > info.file_size or copied > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                    raise ValueError("backup entry exceeds declared size")
+                                output.write(chunk)
+                    for path in (staging / "projects" / "current").glob("*/wren_project.yml"):
+                        build_json(path.parent)
+                (staging / "projects" / "modeling").mkdir(parents=True, exist_ok=True)
+                (staging / "projects" / "current").mkdir(parents=True, exist_ok=True)
+                replacements = [(staging / ".wren" / "profiles.yml", self.instance_home / ".wren" / "profiles.yml"),
+                                (staging / ".wren" / ".env", self.env_file),
+                                (staging / "projects" / "modeling", self.modeling_dir),
+                                (staging / "projects" / "current", self.current_dir)]
+                for source, target in replacements:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    backup = target.with_name(target.name + ".restore-" + uuid.uuid4().hex)
+                    if target.exists():
+                        os.replace(target, backup)
+                        moved.append((backup, target))
+                    if source.exists():
+                        os.replace(source, target)
+                        installed.append(target)
+                self.runtime.reload_from_disk(self.current_dir)
+                restored_secrets = dotenv_values(self.env_file) if self.env_file.is_file() else {}
+                for name in old_secrets.keys() | restored_secrets.keys():
+                    previous = old_secrets.get(name)
+                    if name not in os.environ or os.environ[name] == previous:
+                        replacement = restored_secrets.get(name)
+                        if replacement is None:
+                            os.environ.pop(name, None)
+                        else:
+                            os.environ[name] = replacement
+                self._audit("BACKUP_RESTORED", "wren", "SUCCEEDED")
+                for backup, _ in moved:
+                    shutil.rmtree(backup) if backup.is_dir() else backup.unlink()
+                return {"restored": True, "requiresCatalogSync": True}
+            except Exception:
+                for target in reversed(installed):
+                    shutil.rmtree(target) if target.is_dir() else target.unlink()
+                for backup, target in reversed(moved):
+                    os.replace(backup, target)
+                self._audit("BACKUP_RESTORED", "wren", "FAILED")
+                raise
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+
     def list_datasources(self) -> dict[str, Any]:
         active = get_active_name()
         modeled_profiles = self._modeled_profiles()
@@ -235,7 +384,7 @@ class AdminService:
             if datasource == "mysql":
                 profile["sslMode"] = str(payload.get("sslMode") or "ENABLED")
             if datasource == "mssql":
-                profile["driver"] = str(payload.get("driver") or "ODBC Driver 18 for SQL Server")
+                profile["driver"] = str(payload.get("driver") or _default_mssql_driver())
             self._test_profile(profile)
             add_profile(name, profile, activate=bool(payload.get("active", True)))
             if bool(payload.get("active", True)):
@@ -324,6 +473,8 @@ class AdminService:
 
     def create_modeling(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.get_snapshot(job_id)
+        merge_existing = bool(payload.get("mergeExisting"))
+        existing = self.get_modeling(str(snapshot.get("profileName"))) if merge_existing else None
         selected = payload.get("tableIds") or [table["id"] for table in snapshot.get("tables", [])]
         selected_set = {str(item) for item in selected}
         tables = [table for table in snapshot.get("tables", []) if table.get("id") in selected_set]
@@ -392,10 +543,62 @@ class AdminService:
             "relationships": relationships,
             "updatedAt": int(time.time() * 1000),
         }
+        if existing and existing.get("models"):
+            modeling = self._merge_modeling_semantics(existing, modeling)
         with self._lock:
             self._persist_modeling(modeling)
         self._audit("MODELING_CREATED", job_id, "SUCCEEDED")
         return modeling
+
+    @staticmethod
+    def _model_source_key(model: dict[str, Any]) -> tuple[str, str, str]:
+        source = model.get("source") or {}
+        return (str(source.get("catalog") or ""), str(source.get("schema") or ""), str(source.get("table") or ""))
+
+    @classmethod
+    def _merge_modeling_semantics(cls, existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
+        """按物理表和字段名合并 Draft，避免重新探测覆盖人工语义。"""
+        old_by_source = {cls._model_source_key(model): model for model in existing.get("models", [])}
+        name_by_source = {cls._model_source_key(model): model["name"] for model in fresh.get("models", [])}
+        fresh_models = []
+        for model in fresh["models"]:
+            old = old_by_source.get(cls._model_source_key(model))
+            if old:
+                model["displayName"] = old.get("displayName", model["displayName"])
+                model["description"] = old.get("description", model["description"])
+                old_columns = {column["name"]: column for column in old.get("columns", [])}
+                for column in model["columns"]:
+                    previous = old_columns.get(column["name"])
+                    if previous:
+                        for field in ("displayName", "description", "visible", "primaryKey"):
+                            if field in previous:
+                                column[field] = previous[field]
+                model["primaryKey"] = [column["name"] for column in model["columns"] if column.get("primaryKey")]
+            fresh_models.append(model)
+        fresh["models"] = fresh_models
+        valid_columns = {model["name"]: {column["name"] for column in model["columns"]} for model in fresh_models}
+        preserved = []
+        for relation in existing.get("relationships", []):
+            old_from = next((item for item in existing["models"] if item["name"] == relation.get("fromModel")), None)
+            old_to = next((item for item in existing["models"] if item["name"] == relation.get("toModel")), None)
+            from_name = name_by_source.get(cls._model_source_key(old_from)) if old_from else None
+            to_name = name_by_source.get(cls._model_source_key(old_to)) if old_to else None
+            if not from_name or not to_name:
+                continue
+            if any(column not in valid_columns[from_name] for column in relation.get("fromColumns", [])):
+                continue
+            if any(column not in valid_columns[to_name] for column in relation.get("toColumns", [])):
+                continue
+            copied = dict(relation)
+            copied["fromModel"] = from_name
+            copied["toModel"] = to_name
+            preserved.append(copied)
+        generated = {item["name"]: item for item in fresh.get("relationships", [])}
+        for relation in preserved:
+            generated[relation["name"]] = relation
+        fresh["relationships"] = list(generated.values())
+        fresh["setupCompleted"] = bool(fresh["relationships"])
+        return fresh
 
     def get_modeling(self, profile_name: str | None = None) -> dict[str, Any]:
         if profile_name is None:
@@ -436,6 +639,26 @@ class AdminService:
             modeling["revision"] = _next_revision(modeling["revision"])
             modeling["updatedAt"] = int(time.time() * 1000)
             self._persist_modeling(modeling)
+            self._audit("MODELING_UPDATED", model_name, "SUCCEEDED")
+            return modeling
+
+    def delete_model(self, model_name: str, revision: int, profile_name: str | None = None) -> dict[str, Any]:
+        """从 Draft 移除模型，并在存在关系依赖时拒绝操作。"""
+        with self._lock:
+            modeling = self._require_revision({"revision": revision, "profileName": profile_name})
+            if not any(item["name"] == model_name for item in modeling["models"]):
+                raise KeyError("MODEL_NOT_FOUND")
+            dependencies = [
+                item["name"] for item in modeling.get("relationships", [])
+                if item.get("fromModel") == model_name or item.get("toModel") == model_name
+            ]
+            if dependencies:
+                raise ValueError("MODEL_HAS_RELATIONSHIPS:" + ",".join(dependencies))
+            modeling["models"] = [item for item in modeling["models"] if item["name"] != model_name]
+            modeling["revision"] = _next_revision(modeling["revision"])
+            modeling["updatedAt"] = int(time.time() * 1000)
+            self._persist_modeling(modeling)
+            self._audit("MODELING_MODEL_REMOVED", model_name, "SUCCEEDED")
             return modeling
 
     def save_relationship(self, relationship_name: str, payload: dict[str, Any]) -> dict[str, Any]:

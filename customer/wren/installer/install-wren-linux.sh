@@ -221,7 +221,7 @@ CONFIG_ROOT=""
 SERVICE_USER=""
 PYTHON_COMMAND="python3"
 PORT="8091"
-EXTRAS=""
+EXTRAS="mysql,postgres,mssql"
 ENVIRONMENT_FILE=""
 PROFILE_FILE=""
 HEALTH_TIMEOUT="60"
@@ -271,6 +271,7 @@ fi
 SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd)"
 [[ -f "$SOURCE_DIR/adapter/server.py" ]] || { echo "缺少 adapter/server.py: $SOURCE_DIR" >&2; exit 1; }
 [[ -f "$SOURCE_DIR/upstream/pyproject.toml" ]] || { echo "缺少 upstream/pyproject.toml: $SOURCE_DIR" >&2; exit 1; }
+[[ -f "$SOURCE_DIR/launcher/ensure_dependencies.py" ]] || { echo "缺少 launcher/ensure_dependencies.py: $SOURCE_DIR" >&2; exit 1; }
 [[ -z "$ENVIRONMENT_FILE" || -f "$ENVIRONMENT_FILE" ]] || { echo "环境文件不存在: $ENVIRONMENT_FILE" >&2; exit 1; }
 [[ -z "$PROFILE_FILE" || -f "$PROFILE_FILE" ]] || { echo "profile 文件不存在: $PROFILE_FILE" >&2; exit 1; }
 
@@ -325,6 +326,8 @@ trap cleanup EXIT
 
 cp -a "$SOURCE_DIR/adapter" "$STAGING_DIR/adapter"
 cp -a "$SOURCE_DIR/upstream" "$STAGING_DIR/upstream"
+install -d "$STAGING_DIR/launcher"
+cp "$SOURCE_DIR/launcher/ensure_dependencies.py" "$STAGING_DIR/launcher/ensure_dependencies.py"
 if [[ -f "$SOURCE_DIR/NOTICE.md" ]]; then
   cp "$SOURCE_DIR/NOTICE.md" "$STAGING_DIR/NOTICE.md"
 fi
@@ -429,6 +432,7 @@ Environment=WREN_PROJECT_ROOT=$PROJECT_ROOT
 Environment=WREN_INSTANCE_DIR=$STATE_ROOT
 Environment=WREN_ADAPTER_HOST=127.0.0.1
 Environment=WREN_ADAPTER_PORT=$PORT
+ExecStartPre=$VENV_DIR/bin/python $RUNTIME_DIR/launcher/ensure_dependencies.py $RUNTIME_DIR/upstream
 ExecStart=$VENV_DIR/bin/python $RUNTIME_DIR/adapter/server.py
 Restart=on-failure
 RestartSec=3

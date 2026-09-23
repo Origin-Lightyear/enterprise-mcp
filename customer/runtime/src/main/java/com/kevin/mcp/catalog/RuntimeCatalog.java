@@ -50,4 +50,18 @@ public interface RuntimeCatalog {
      * @throws CatalogException 云端不可用或摘要确认失败
      */
     void synchronize();
+
+    /**
+     * 使当前规划绑定立即失效，直到本地状态重新确认。
+     *
+     * @param reasonCode 失效原因代码
+     */
+    void invalidate(String reasonCode);
+
+    /**
+     * 结束文件恢复窗口并重新确认实际 Catalog。
+     *
+     * @throws CatalogException 云端确认尚不可用
+     */
+    void resumeAfterRestore();
 }

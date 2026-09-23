@@ -6,6 +6,7 @@ import com.kevin.mcp.execution.SemanticModelSnapshot;
 import com.kevin.mcp.execution.SemanticModelSnapshotProvider;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -221,6 +222,30 @@ public class WrenSidecarClient implements SemanticModelSnapshotProvider, Current
             Map<?, ?> response = request == null
                     ? spec.retrieve().body(Map.class)
                     : spec.body(request).retrieve().body(Map.class);
+            return response == null ? Map.of() : response;
+        } catch (RestClientResponseException exception) {
+            throw new WrenAdminClientException(exception.getStatusCode().value(), exception.getResponseBodyAsString(), exception);
+        }
+    }
+
+    /** 下载当前 Wren 数据源与 MDL 的受保护备份。 */
+    public byte[] downloadBackup() {
+        try {
+            return restClient.get().uri("/internal/admin/backup")
+                    .header("X-Wren-Service-Token", properties.getAdapterServiceToken())
+                    .retrieve().body(byte[].class);
+        } catch (RestClientResponseException exception) {
+            throw new WrenAdminClientException(exception.getStatusCode().value(), exception.getResponseBodyAsString(), exception);
+        }
+    }
+
+    /** 上传并恢复已校验的 Wren 备份。 */
+    public Map<?, ?> restoreBackup(byte[] backup) {
+        try {
+            Map<?, ?> response = restClient.post().uri("/internal/admin/restore")
+                    .header("X-Wren-Service-Token", properties.getAdapterServiceToken())
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .body(backup).retrieve().body(Map.class);
             return response == null ? Map.of() : response;
         } catch (RestClientResponseException exception) {
             throw new WrenAdminClientException(exception.getStatusCode().value(), exception.getResponseBodyAsString(), exception);

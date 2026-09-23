@@ -37,6 +37,9 @@ class _FakePyodbc:
     def __init__(self) -> None:
         self.connect = MagicMock(return_value=MagicMock(timeout=0))
 
+    def drivers(self) -> list[str]:
+        return ["ODBC Driver 18 for SQL Server"]
+
 
 def _parse_conn_str(connect_call) -> dict[str, str]:
     """Split an ODBC connection string from a ``connect`` call into a dict."""
@@ -226,6 +229,23 @@ def test_mssql_both_credentials_emits_uid_and_pwd() -> None:
     assert parts["UID"] == "alice"
     assert parts["PWD"] == "secret"
     assert "Trusted_Connection" not in parts
+
+
+def test_mssql_falls_back_to_installed_driver_version() -> None:
+    fake = _FakePyodbc()
+    fake.drivers = MagicMock(return_value=["ODBC Driver 17 for SQL Server"])
+    with patch("wren.connector.mssql.pyodbc", fake):
+        _connect_mssql_pyodbc(
+            host="h",
+            port="1433",
+            database="db",
+            user="alice",
+            password="secret",
+            driver="ODBC Driver 18 for SQL Server",
+        )
+
+    parts = _parse_conn_str(fake.connect.call_args)
+    assert parts["DRIVER"] == "ODBC Driver 17 for SQL Server"
 
 
 def test_mssql_connects_with_autocommit() -> None:

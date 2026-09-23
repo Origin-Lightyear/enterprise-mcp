@@ -1,6 +1,8 @@
 import json
+import io
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,14 +12,59 @@ from .admin_service import AdminService, _metadata_text, _next_revision
 
 
 class FakeRuntime:
+    def __init__(self):
+        self.reloaded = None
+
     def close(self):
         return None
 
     def replace_current(self, _source_key, _path):
         return None
 
+    def reload_from_disk(self, path):
+        self.reloaded = path
+
 
 class AdminServiceModelingTest(unittest.TestCase):
+    def test_backup_round_trip_restores_profiles_and_current_mdl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = FakeRuntime()
+            service = AdminService(root / "project", root / "instance", runtime)
+            try:
+                (root / "instance" / ".wren").mkdir(parents=True)
+                (root / "instance" / ".wren" / "profiles.yml").write_text("sales: {}\n", encoding="utf-8")
+                (root / "instance" / ".wren" / ".env").write_text("DB_PASSWORD=secret\n", encoding="utf-8")
+                current = root / "project" / "projects" / "current" / "sales"
+                current.mkdir(parents=True)
+                (current / "wren_project.yml").write_text("name: customer_database\n", encoding="utf-8")
+                backup = service.create_backup()
+                (root / "instance" / ".wren" / ".env").write_text("DB_PASSWORD=changed\n", encoding="utf-8")
+                result = service.restore_backup(backup)
+                self.assertTrue(result["restored"])
+                self.assertEqual("DB_PASSWORD=secret\n", (root / "instance" / ".wren" / ".env").read_text(encoding="utf-8"))
+                self.assertEqual(current, runtime.reloaded / "sales")
+            finally:
+                service.close()
+
+    def test_restore_rejects_path_traversal_without_touching_existing_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = AdminService(root / "project", root / "instance", FakeRuntime())
+            try:
+                (root / "instance" / ".wren").mkdir(parents=True)
+                existing = root / "instance" / ".wren" / ".env"
+                existing.write_text("DB_PASSWORD=original\n", encoding="utf-8")
+                output = io.BytesIO()
+                with zipfile.ZipFile(output, "w") as archive:
+                    archive.writestr("manifest.json", json.dumps({"format": "enterprise-mcp-wren-backup", "version": 1}))
+                    archive.writestr("../outside", "bad")
+                with self.assertRaisesRegex(ValueError, "unsafe path"):
+                    service.restore_backup(output.getvalue())
+                self.assertEqual("DB_PASSWORD=original\n", existing.read_text(encoding="utf-8"))
+            finally:
+                service.close()
+
     def test_keeps_independent_modeling_content_for_each_datasource(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -261,6 +308,70 @@ class AdminServiceModelingTest(unittest.TestCase):
                     service.replace_relationships(payload)
             finally:
                 service.close()
+
+    def test_updates_column_semantics_and_removes_unreferenced_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = AdminService(root / "project", root / "instance", FakeRuntime())
+            try:
+                service._persist_modeling({
+                    "revision": 1, "profileName": "customer-primary", "datasource": "mysql",
+                    "models": [
+                        {"name": "Order", "displayName": "Order", "description": "", "source": {"catalog": "shop", "schema": "public", "table": "orders"}, "primaryKey": ["id"],
+                         "columns": [{"name": "id", "displayName": "id", "description": "", "type": "BIGINT", "rawType": "bigint", "notNull": True, "primaryKey": True, "visible": True}]},
+                        {"name": "Unused", "displayName": "Unused", "description": "", "source": {"catalog": "shop", "schema": "public", "table": "unused"}, "primaryKey": [], "columns": []},
+                    ], "relationships": [],
+                })
+                updated = service.update_model("Order", {"revision": 1, "profileName": "customer-primary",
+                                                           "columns": [{"name": "id", "description": "订单主键", "visible": False}]})
+                self.assertEqual("订单主键", updated["models"][0]["columns"][0]["description"])
+                self.assertFalse(updated["models"][0]["columns"][0]["visible"])
+                removed = service.delete_model("Unused", updated["revision"], "customer-primary")
+                self.assertEqual(["Order"], [item["name"] for item in removed["models"]])
+            finally:
+                service.close()
+
+    def test_rejects_removing_model_used_by_relationship(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = AdminService(root / "project", root / "instance", FakeRuntime())
+            try:
+                service._persist_modeling({
+                    "revision": 1, "profileName": "customer-primary", "models": [
+                        {"name": "Order", "source": {"catalog": "shop", "schema": "public", "table": "orders"}, "columns": [{"name": "id", "type": "BIGINT", "rawType": "bigint", "notNull": True}]}, {"name": "Customer", "source": {"catalog": "shop", "schema": "public", "table": "customers"}, "columns": [{"name": "id", "type": "BIGINT", "rawType": "bigint", "notNull": True}]}
+                    ], "relationships": [{"name": "Order_Customer", "fromModel": "Order", "toModel": "Customer", "fromColumns": ["id"], "toColumns": ["id"], "cardinality": "MANY_TO_ONE", "status": "CONFIRMED", "source": "MANUAL"}]
+                })
+                with self.assertRaisesRegex(ValueError, "MODEL_HAS_RELATIONSHIPS"):
+                    service.delete_model("Order", 1, "customer-primary")
+            finally:
+                service.close()
+
+    def test_merges_reintrospection_without_losing_manual_semantics(self):
+        existing = {
+            "models": [{
+                "name": "Order", "displayName": "业务订单", "description": "人工说明",
+                "source": {"catalog": "", "schema": "public", "table": "orders"},
+                "columns": [{"name": "id", "displayName": "订单编号", "description": "人工注释", "visible": False, "primaryKey": True}],
+            }],
+            "relationships": [],
+        }
+        fresh = {
+            "models": [{
+                "name": "Orders", "displayName": "orders", "description": "",
+                "source": {"catalog": "", "schema": "public", "table": "orders"},
+                "columns": [
+                    {"name": "id", "displayName": "id", "description": "", "visible": True, "primaryKey": True},
+                    {"name": "total", "displayName": "total", "description": "金额", "visible": True, "primaryKey": False},
+                ],
+            }],
+            "relationships": [],
+        }
+        merged = AdminService._merge_modeling_semantics(existing, fresh)
+        model = merged["models"][0]
+        self.assertEqual("业务订单", model["displayName"])
+        self.assertEqual("人工注释", model["columns"][0]["description"])
+        self.assertFalse(model["columns"][0]["visible"])
+        self.assertEqual("total", model["columns"][1]["name"])
 
 
 if __name__ == "__main__":

@@ -58,7 +58,6 @@ export function SetupConnection({ onSaved, onCancel, onModeling, initial }: { on
           ...values,
           active: initial ? initial.active : true,
           sslMode: values.ssl ? 'ENABLED' : 'DISABLED',
-          driver: selected === 'mssql' ? 'ODBC Driver 18 for SQL Server' : undefined,
         }) });
         await onSaved(initial?.name || values.name);
       } catch (cause) {

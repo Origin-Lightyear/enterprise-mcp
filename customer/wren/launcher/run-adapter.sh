@@ -43,6 +43,7 @@ resolve_python() {
 
 PYTHON_EXECUTABLE="$(resolve_python)"
 SERVER_PATH="$SCRIPT_DIR/../adapter/server.py"
+DEPENDENCY_CHECKER="$SCRIPT_DIR/ensure_dependencies.py"
 export PYTHONPATH="$SCRIPT_DIR/../upstream/src"
 mkdir -p "$PROJECT_ROOT"
 export WREN_PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd)"
@@ -51,6 +52,12 @@ export WREN_INSTANCE_DIR="$(cd "$INSTANCE_DIR" && pwd)"
 export WREN_ADAPTER_SERVICE_TOKEN="$SERVICE_TOKEN"
 export WREN_ADAPTER_HOST="127.0.0.1"
 export WREN_ADAPTER_PORT="$PORT"
+
+if ! DEPENDENCY_OUTPUT="$("$PYTHON_EXECUTABLE" "$DEPENDENCY_CHECKER" "$SCRIPT_DIR/../upstream" 2>&1)"; then
+  echo "Wren 数据源依赖检查失败。当前解释器: $PYTHON_EXECUTABLE。" >&2
+  printf '%s\n' "$DEPENDENCY_OUTPUT" >&2
+  exit 1
+fi
 
 if ! PREFLIGHT_OUTPUT="$("$PYTHON_EXECUTABLE" -c \
   "import runpy, sys; from pathlib import Path; sys.path.insert(0, str(Path(sys.argv[1]).parent)); runpy.run_path(sys.argv[1], run_name='wren_adapter_preflight')" \

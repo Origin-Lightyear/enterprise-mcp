@@ -60,7 +60,7 @@ public class McpUpgradeController {
                 || blank(request.version()) || blank(request.sha256())) {
             throw new IllegalArgumentException("升级参数不完整");
         }
-        new ProcessBuilder(List.of(updaterCommand, "--instance-id", instanceId,
+        new ProcessBuilder(List.of(updaterCommand,
                         "--download-url", request.downloadUrl(), "--version", request.version(),
                         "--sha256", request.sha256()))
                 .redirectErrorStream(true)

@@ -203,6 +203,21 @@ class AdapterValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "do not match"):
             _validate_result_lineage(["mobile", "name"], {"mobile": ["Employee.mobile"]})
 
+    def test_aligns_database_column_case_with_sqlglot_lineage(self):
+        lineage = _validate_result_lineage(
+            ["Mobile", "TOTAL"],
+            {"mobile": ["Employee.mobile"], "total": ["Employee.salary"]},
+        )
+
+        self.assertEqual(
+            {"Mobile": ["Employee.mobile"], "TOTAL": ["Employee.salary"]},
+            lineage,
+        )
+
+    def test_reports_actual_and_expected_columns_when_lineage_is_ambiguous(self):
+        with self.assertRaisesRegex(ValueError, "actual=.*missingLineage=.*unexpectedLineage="):
+            _validate_result_lineage(["_col_0"], {"total": ["Employee.salary"]})
+
     def test_derives_aggregate_and_join_lineage_from_sql(self):
         manifest = {
             "models": [

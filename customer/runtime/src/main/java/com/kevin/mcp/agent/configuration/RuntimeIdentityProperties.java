@@ -21,9 +21,9 @@ public class RuntimeIdentityProperties {
     /** 客户环境中的 Runtime 实例编号。 */
     private String instanceId = "";
 
-    /** 当前客户 JAR 的发布版本。 */
+    /** 当前客户 Runtime 构建产物的发布版本。 */
     private String artifactVersion = "dev";
 
-    /** 可选的客户 JAR SHA-256 期望摘要；packaged 模式用于校验 Runtime 自动计算值。 */
+    /** 可选的 Runtime 构建产物 SHA-256 期望摘要；packaged 模式用于校验自动计算值。 */
     private String artifactDigest = "";
 }

@@ -197,6 +197,17 @@ class WrenRuntime:
                 if engine is not None:
                     engine.close()
 
+    def reload_from_disk(self, current_dir: Path) -> None:
+        """关闭旧 Engine 并重新扫描 Current MDL，保证恢复后不继续使用旧缓存。"""
+        with self._lock:
+            self.close()
+            self._projects = {
+                project.name: project
+                for project in current_dir.iterdir()
+                if project.is_dir() and (project / "wren_project.yml").is_file()
+            } if current_dir.is_dir() else {}
+            self._manifests.clear()
+
     def replace_current(self, source_key: str, project: Path) -> None:
         """只替换指定数据源的 Current MDL 内容，其他数据源查询不受影响。"""
         with self._lock:
@@ -483,10 +494,29 @@ def _validate_lineage(lineage: dict[str, Any], manifest: dict[str, Any]) -> None
             raise ValueError("columnLineage references an unknown MDL field")
 
 
-def _validate_result_lineage(columns: list[str], lineage: dict[str, Any]) -> None:
-    """要求数据库实际输出列与模型声明的来源映射完全一致。"""
-    if set(columns) != set(lineage):
-        raise ValueError("query output columns do not match columnLineage")
+def _validate_result_lineage(columns: list[str], lineage: dict[str, Any]) -> dict[str, list[str]]:
+    """按数据库实际列名校正大小写后校验输出列来源映射。"""
+    if len(columns) != len(set(columns)):
+        raise ValueError(f"query output columns are not unique: {columns}")
+    if set(columns) == set(lineage):
+        return lineage
+    # sqlglot 会规范化未加引号的标识符，而 JDBC/Arrow 驱动可能保留数据库返回的大小写。
+    # 只有大小写折叠后恰好一一对应时才自动对齐，避免把真正不同的列错误映射到一起。
+    folded: dict[str, list[str]] = {}
+    for output in lineage:
+        folded.setdefault(output.casefold(), []).append(output)
+    normalized: dict[str, list[str]] = {}
+    for column in columns:
+        candidates = folded.get(column.casefold(), [])
+        if len(candidates) != 1:
+            missing = sorted(set(lineage) - set(columns))
+            unexpected = sorted(set(columns) - set(lineage))
+            raise ValueError(
+                "query output columns do not match columnLineage: "
+                f"actual={columns}, missingLineage={missing}, unexpectedLineage={unexpected}"
+            )
+        normalized[column] = lineage[candidates[0]]
+    return normalized
 
 
 @trace_methods(exclude={"handle_one_request", "log_message"})
@@ -512,6 +542,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/internal/admin/"):
                 self._require_service_token()
+                if path == "/internal/admin/backup":
+                    self._respond_binary(200, self.admin.create_backup(), "wren-backup.zip")
+                    return
                 if path == "/internal/admin/datasources":
                     self._respond(200, "OK", self.admin.list_datasources())
                     return
@@ -574,8 +607,14 @@ class Handler(BaseHTTPRequestHandler):
                     data = self.admin.delete_relationship(name, revision, profile_name)
                 self._respond(200, "OK", data)
                 return
-            if model_match and method == "PUT":
-                self._respond(200, "OK", self.admin.update_model(unquote(model_match.group(1)), payload))
+            if model_match:
+                name = unquote(model_match.group(1))
+                if method == "PUT":
+                    self._respond(200, "OK", self.admin.update_model(name, payload))
+                    return
+                revision = int(parse_qs(parsed.query).get("revision", ["-1"])[0])
+                profile_name = parse_qs(parsed.query).get("profileName", [None])[0]
+                self._respond(200, "OK", self.admin.delete_model(name, revision, profile_name))
                 return
             if job_match and method == "DELETE":
                 self._respond(200, "OK", self.admin.cancel_job(job_match.group(1)))
@@ -628,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
             result = self.runtime.query(
                 source_key, sql, payload.get("limit", MAX_RESULT_ROWS), expected_digest
             )
-            _validate_result_lineage(result["columns"], lineage)
+            lineage = _validate_result_lineage(result["columns"], lineage)
             result["columnLineage"] = {
                 output: [f"{source_key}:{field}" for field in fields]
                 for output, fields in lineage.items()
@@ -645,6 +684,9 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch_admin_post(self, path: str) -> None:
         try:
             self._require_service_token()
+            if path == "/internal/admin/restore":
+                self._respond(200, "OK", self.admin.restore_backup(self._read_raw_body()))
+                return
             payload = self._read_payload(required=False)
             if path == "/internal/admin/datasources":
                 self._respond(201, "OK", self.admin.save_datasource(payload))
@@ -696,6 +738,15 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("request body must be a JSON object")
         return payload
+
+    def _read_raw_body(self) -> bytes:
+        length = self.headers.get("Content-Length")
+        if length is None:
+            raise ValueError("restore body is missing")
+        size = int(length)
+        if size <= 0 or size > 50 * 1024 * 1024:
+            raise ValueError("restore body is missing or too large")
+        return self.rfile.read(size)
 
     def _require_service_token(self) -> None:
         if not self.service_token:
@@ -769,6 +820,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Wren-Request-Id", current_request_id())
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _respond_binary(self, status: int, body: bytes, filename: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Wren-Request-Id", current_request_id())
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, *_: Any) -> None:
         return

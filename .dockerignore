@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.codegraph
+.venv-wrenai
+**/node_modules
+**/target
+**/__pycache__
+customer/app/src/main/resources/static/admin/wren
+customer/wren/project-root
+data
+docs
+

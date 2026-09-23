@@ -53,6 +53,7 @@ if (-not (Test-Path -LiteralPath $serverPath -PathType Leaf)) {
 }
 $upstream = (Resolve-Path -LiteralPath $upstreamPath).Path
 $server = (Resolve-Path -LiteralPath $serverPath).Path
+$dependencyChecker = Join-Path -Path $PSScriptRoot -ChildPath "ensure_dependencies.py"
 $env:PYTHONPATH = $upstream
 if (-not (Test-Path -LiteralPath $ProjectRoot)) {
     New-Item -ItemType Directory -Path $ProjectRoot | Out-Null
@@ -64,9 +65,21 @@ $env:WREN_ADAPTER_HOST = "127.0.0.1"
 $env:WREN_ADAPTER_PORT = "$Port"
 
 Write-Host "[2/3] 正在检查 Wren Adapter 依赖..."
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$dependencyOutput = & $python $dependencyChecker (Split-Path -Parent $upstream) 2>&1
+$dependencyExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorActionPreference
+if ($dependencyExitCode -ne 0) {
+    $details = ($dependencyOutput | Out-String).Trim()
+    throw "Wren 数据源依赖检查失败。当前解释器: $python。`n$details"
+}
 $preflightCode = "import runpy, sys; from pathlib import Path; sys.path.insert(0, str(Path(sys.argv[1]).parent)); runpy.run_path(sys.argv[1], run_name='wren_adapter_preflight')"
+$ErrorActionPreference = "Continue"
 $preflightOutput = & $python -c $preflightCode $server 2>&1
-if ($LASTEXITCODE -ne 0) {
+$preflightExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorActionPreference
+if ($preflightExitCode -ne 0) {
     $details = ($preflightOutput | Out-String).Trim()
     throw "Wren Adapter 依赖检查失败。当前解释器: $python。请运行安装器或指定已安装 customer/wren/upstream 的虚拟环境。`n$details"
 }

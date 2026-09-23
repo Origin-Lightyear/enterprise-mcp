@@ -2,10 +2,10 @@
  * Data source management follows Canner/WrenAI GenBI Classic settings patterns.
  * Copyright (c) Canner. Licensed under AGPL-3.0; modified for enterprise-mcp.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Layout, Modal, Space, Table, Tag, Typography, message } from 'antd';
 import { Pencil, Play, Plus, RefreshCw, Trash2, Unplug } from 'lucide-react';
-import { api } from './api';
+import { api, downloadBackup, restoreBackup } from './api';
 import { ConsoleHeader } from './ConsoleHeader';
 import { datasourceCanBeDeleted } from './datasourceState';
 import type { Datasource } from './types';
@@ -24,6 +24,9 @@ export function DataSourcesPage({ datasources, loading, onAdd, onEdit, onModel, 
 }) {
   const [testing, setTesting] = useState('');
   const [deleting, setDeleting] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const restoreInput = useRef<HTMLInputElement>(null);
 
   const test = async (datasource: Datasource) => {
     setTesting(datasource.name);
@@ -59,12 +62,22 @@ export function DataSourcesPage({ datasources, loading, onAdd, onEdit, onModel, 
     });
   };
 
+  const backup = async () => {
+    setBackupBusy(true);
+    try { const blob = await downloadBackup(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'wren-backup.zip'; link.click(); URL.revokeObjectURL(url); message.success('备份已下载'); }
+    catch (error) { message.error(`备份失败：${String(error)}`); } finally { setBackupBusy(false); }
+  };
+
+  const restore = (file: File) => {
+    Modal.confirm({ title: '恢复 Wren 备份？', content: '备份包含数据源凭据，并会覆盖当前数据源、建模草稿和 Current MDL。请确认已停止相关编辑。', okText: '恢复并覆盖', okButtonProps: { danger: true }, cancelText: '取消', onOk: async () => { setRestoreBusy(true); try { await restoreBackup(file); message.success('恢复成功，Runtime 正在重新同步'); await onReload(); } catch (error) { message.error(`恢复失败：${String(error)}`); } finally { setRestoreBusy(false); } } });
+  };
+
   return <Layout className="app datasource-app">
     <ConsoleHeader active="datasources" onModeling={onModeling} onDatasources={() => undefined}/>
     <Content className="datasource-content">
       <div className="page-heading">
         <div><Typography.Title level={2}>数据源</Typography.Title><Typography.Paragraph type="secondary">管理可用于语义建模的数据库连接。应用更新后，建模内容会成为 Current MDL。</Typography.Paragraph></div>
-        <Space wrap><Button icon={<RefreshCw size={16}/>} loading={loading} onClick={() => void onReload()}>刷新</Button><Button type="primary" icon={<Plus size={16}/>} onClick={onAdd}>添加数据库</Button></Space>
+        <Space wrap><Button icon={<RefreshCw size={16}/>} loading={loading} onClick={() => void onReload()}>刷新</Button><Button loading={backupBusy} onClick={() => void backup()}>备份下载</Button><Button loading={restoreBusy} danger onClick={() => restoreInput.current?.click()}>恢复备份</Button><input ref={restoreInput} type="file" accept=".zip,application/zip" hidden onChange={event => { const file = event.target.files?.[0]; event.currentTarget.value = ''; if (file) restore(file); }}/><Button type="primary" icon={<Plus size={16}/>} onClick={onAdd}>添加数据库</Button></Space>
       </div>
       <Table<Datasource>
         rowKey="name"

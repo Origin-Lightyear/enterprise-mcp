@@ -7,6 +7,8 @@ import com.kevin.mcp.catalog.MdlUpdateResult;
 import com.kevin.mcp.catalog.RuntimeCatalog;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -33,6 +37,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/internal/wren/admin")
 public class WrenAdminController {
+
+    private static final Logger log = LoggerFactory.getLogger(WrenAdminController.class);
 
     private final WrenSidecarClient client;
     private final RuntimeCatalog runtimeCatalog;
@@ -56,6 +62,30 @@ public class WrenAdminController {
      */
     @GetMapping("/datasources")
     public Map<?, ?> datasources() { return exchange(HttpMethod.GET, "/internal/admin/datasources", null); }
+
+    /** 下载包含凭据的 Wren 配置备份。 */
+    @GetMapping(value = "/backup", produces = "application/zip")
+    public ResponseEntity<byte[]> backup() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"wren-backup.zip\"")
+                .body(client.downloadBackup());
+    }
+
+    /** 恢复上传的 Wren 配置备份并要求 Runtime 重新同步 Catalog。 */
+    @PostMapping(value = "/restore", consumes = "application/zip")
+    public Map<?, ?> restore(@RequestBody byte[] backup) {
+        runtimeCatalog.invalidate("WREN_RESTORE_PENDING");
+        try {
+            return client.restoreBackup(backup);
+        } finally {
+            try {
+                runtimeCatalog.resumeAfterRestore();
+            } catch (RuntimeException exception) {
+                log.warn("Wren backup restore finished but Catalog synchronization is pending", exception);
+            }
+        }
+    }
 
     /**
      * 创建并测试数据源。
@@ -180,6 +210,23 @@ public class WrenAdminController {
     @PutMapping("/modeling/models/{modelName}")
     public Map<?, ?> updateModel(@PathVariable String modelName, @RequestBody ModelUpdateRequest request) {
         return exchange(HttpMethod.PUT, "/internal/admin/modeling/models/" + segment(modelName), request);
+    }
+
+    /**
+     * 从 Draft 语义模型中移除一张表；不会修改真实数据库。
+     *
+     * @param modelName 模型名
+     * @param revision 建模 revision
+     * @param profileName Profile 名称
+     * @return 最新建模内容
+     */
+    @DeleteMapping("/modeling/models/{modelName}")
+    public Map<?, ?> deleteModel(@PathVariable String modelName, @RequestParam long revision,
+                                 @RequestParam(required = false) String profileName) {
+        String profileQuery = profileName == null ? "" : "&profileName=" + segment(profileName);
+        return exchange(HttpMethod.DELETE,
+                "/internal/admin/modeling/models/" + segment(modelName) + "?revision=" + revision + profileQuery,
+                null);
     }
 
     /**
@@ -309,8 +356,9 @@ public class WrenAdminController {
      * 表示从 Snapshot 选择数据表的输入。
      *
      * @param tableIds 数据表稳定 ID 列表
+     * @param mergeExisting 是否在已有 Draft 上保留人工语义并执行差异合并
      */
-    public record TableSelectionRequest(List<String> tableIds) { }
+    public record TableSelectionRequest(List<String> tableIds, boolean mergeExisting) { }
 
     /**
      * 表示 Model 元数据和字段更新。

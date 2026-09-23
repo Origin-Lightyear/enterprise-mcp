@@ -47,6 +47,7 @@ public class RuntimeCatalogService implements RuntimeCatalog {
     private final AtomicReference<CatalogState> state = new AtomicReference<>(new CatalogState(
             PlanningReadinessStatus.NOT_READY, "", "", "STARTING", Instant.now()));
     private final LinkedHashMap<String, OperationRecord> operations = new LinkedHashMap<>();
+    private boolean restorePending;
 
     /**
      * 注入 Catalog 构建、Wren 和 Control Plane adapters。
@@ -110,6 +111,9 @@ public class RuntimeCatalogService implements RuntimeCatalog {
             throw new CatalogException(Code.VALIDATION_FAILED, "Wren Current MDL adapter is unavailable");
         }
         synchronized (updateLock) {
+            if (restorePending) {
+                throw new CatalogException(Code.NOT_READY, "Wren backup restore is in progress");
+            }
             Optional<SemanticModelSnapshot> currentMdl = adapter.current();
             String actualMdlDigest = currentMdl.map(SemanticModelSnapshot::digest).orElse("");
             PreparedMdl prepared;
@@ -209,6 +213,9 @@ public class RuntimeCatalogService implements RuntimeCatalog {
     @Override
     public void synchronize() {
         synchronized (updateLock) {
+            if (restorePending) {
+                throw new CatalogException(Code.NOT_READY, "Wren backup restore is in progress");
+            }
             Optional<SemanticModelSnapshot> currentMdl = Optional.empty();
             CurrentMdlAdapter adapter = currentMdlAdapterProvider.getIfAvailable();
             if (adapter != null) {
@@ -228,6 +235,25 @@ public class RuntimeCatalogService implements RuntimeCatalog {
                 markNotReady(snapshot, exception.code().name());
                 throw exception;
             }
+        }
+    }
+
+    @Override
+    public void invalidate(String reasonCode) {
+        synchronized (updateLock) {
+            restorePending = true;
+            CatalogState previous = state.get();
+            currentSnapshot.set(null);
+            state.set(new CatalogState(PlanningReadinessStatus.NOT_READY,
+                    previous.catalogDigest(), previous.mdlDigest(), reasonCode, Instant.now()));
+        }
+    }
+
+    @Override
+    public void resumeAfterRestore() {
+        synchronized (updateLock) {
+            restorePending = false;
+            synchronize();
         }
     }
 

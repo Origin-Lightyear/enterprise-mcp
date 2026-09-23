@@ -258,6 +258,32 @@ input {
   border-top: 1px solid #dce2e9;
   color: #667085;
 }
+
+.column-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.column-editor-row {
+  display: grid;
+  grid-template-columns: 120px minmax(130px, 1fr) minmax(180px, 1.4fr) 58px 58px;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.column-editor-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.column-name {
+  padding-top: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #595959;
+}
 .canvas {
   height: calc(100vh - 48px);
   background: #fff;
