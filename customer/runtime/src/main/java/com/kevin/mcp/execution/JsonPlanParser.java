@@ -42,7 +42,7 @@ public class JsonPlanParser {
         String planId = this.requireText(payload.get("planId"), "planId");
         Integer planContractVersion = this.requireInteger(payload.get("planContractVersion"), "planContractVersion");
         String tenantId = this.requireText(payload.get("tenantId"), "tenantId");
-        String employeeId = this.requireText(payload.get("employeeId"), "employeeId");
+        Long employeeId = this.requireLong(payload.get("employeeId"), "employeeId");
         String instanceId = this.requireText(payload.get("instanceId"), "instanceId");
         String runtimeVersion = this.requireText(payload.get("runtimeVersion"), "runtimeVersion");
         String artifactDigest = this.requireText(payload.get("artifactDigest"), "artifactDigest");
@@ -377,6 +377,39 @@ public class JsonPlanParser {
         return integer;
     }
 
+    /**
+     * 读取可选长整数值，兼容 Gson 数字和上游 JSON 字符串两种形态。
+     *
+     * @param value 原始值
+     * @return 长整数值；为空时返回 null
+     */
+    private Long longValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return value instanceof Number number
+                    ? number.longValue()
+                    : Long.valueOf(String.valueOf(value).trim());
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Long field is invalid: " + value, exception);
+        }
+    }
+
+    /**
+     * 读取必填长整数值。
+     *
+     * @param value 原始值
+     * @param fieldName 字段名
+     * @return 长整数值
+     */
+    private Long requireLong(Object value, String fieldName) {
+        Long valueLong = this.longValue(value);
+        if (valueLong == null) {
+            throw new IllegalArgumentException("Missing required field: " + fieldName);
+        }
+        return valueLong;
+    }
     /**
      * 返回第一个非 null 值。
      *

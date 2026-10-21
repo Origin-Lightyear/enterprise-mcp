@@ -73,7 +73,7 @@ public class AgentSecurityCodec {
         JsonObject tenantObject = JsonParser.parseString(json).getAsJsonObject();
         return new TenantRequestInfo(
                 tenantObject.get("tenantId").getAsString(),
-                tenantObject.get("employeeId").getAsString(),
+                tenantObject.get("employeeId").getAsLong(),
                 tenantObject.get("versionNumber").getAsLong(),
                 tenantObject.get("mcpInstanceId").getAsString()
         );

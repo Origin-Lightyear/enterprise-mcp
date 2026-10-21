@@ -103,7 +103,7 @@ class PermissionReviewServiceTest {
         JsonExecutionStep step = new JsonExecutionStep("call", "s1", null,
                 Map.of("question", "查询员工手机号"), null, List.of(), null, null, List.of(),
                 "database.semantic-query", 1);
-        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", "e1", "i1", "1.0.0",
+        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", 1L, "i1", "1.0.0",
                 "artifact", "catalog", "", "2026-09-17T00:00:00Z", "BEST_EFFORT_CURRENT",
                 "查询员工手机号", List.of(step), null);
         SemanticModelSnapshot mdl = new SemanticModelSnapshot("digest", Map.of("models", List.of(
@@ -129,7 +129,7 @@ class PermissionReviewServiceTest {
         JsonExecutionStep step = new JsonExecutionStep("call", "s1", null,
                 Map.of("sourceKey", "sales", "question", "查询员工手机号"), null, List.of(), null, null,
                 List.of(), "database.semantic-query", 1);
-        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", "e1", "i1", "1.0.0",
+        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", 1L, "i1", "1.0.0",
                 "artifact", "catalog", "", "2026-09-17T00:00:00Z", "BEST_EFFORT_CURRENT",
                 "查询员工手机号", List.of(step), null);
         Map<String, Object> employeeManifest = Map.of("models", List.of(
@@ -199,7 +199,7 @@ class PermissionReviewServiceTest {
     private JsonExecutionPlan apiPlan() {
         JsonExecutionStep step = new JsonExecutionStep("call", "s1", null, Map.of(), null,
                 List.of(), null, null, List.of(), "cap.employee.query", 1);
-        return new JsonExecutionPlan("p1", 1, "t1", "e1", "i1", "1.0.0",
+        return new JsonExecutionPlan("p1", 1, "t1", 1L, "i1", "1.0.0",
                 "artifact", "catalog", "", "2026-09-17T00:00:00Z", "BEST_EFFORT_CURRENT",
                 "查询员工手机号", List.of(step), null);
     }
@@ -216,7 +216,7 @@ class PermissionReviewServiceTest {
     }
 
     private JsonExecutionPlan plan() {
-        return new JsonExecutionPlan("p1", 1, "t1", "e1", "i1", "1.0.0",
+        return new JsonExecutionPlan("p1", 1, "t1", 1L, "i1", "1.0.0",
                 "artifact", "catalog", "", "2026-09-17T00:00:00Z", "BEST_EFFORT_CURRENT",
                 "查询", List.of(), "无法生成计划");
     }

@@ -1,4 +1,4 @@
-package com.customer.mcp.tool;
+package com.customer.mcp.tool.internalmcp;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

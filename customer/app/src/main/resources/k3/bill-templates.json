@@ -1,0 +1,85 @@
+{
+  "SAL_Quotation": {
+    "_desc": "销售报价单（标准销售报价单 XSBJD01_SYS）。客户字段为全大写 FCUSTID；销售组织 FSaleOrgId 必填；分录 FUnitID 必填。⚠️本环境 Save 对字段顺序敏感：财务信息 FQUOTATIONFIN 必须排在分录 FQUOTATIONENTRY 之前，否则含税单价被判定为 0 而保存失败；模板已将 FIN 置于 ENTRY 之前。",
+    "FBillTypeID": {
+      "FNumber": "XSBJD01_SYS"
+    },
+    "FSaleOrgId": {
+      "FNumber": "100"
+    },
+    "FCUSTID": {
+      "FNumber": "<客户编码, 如 CUST0001>"
+    },
+    "FQUOTATIONFIN": {
+      "FSettleCurrId": {
+        "FNumber": "PRE001"
+      }
+    },
+    "FQUOTATIONENTRY": [
+      {
+        "FMaterialId": {
+          "FNumber": "<物料编码>"
+        },
+        "FUnitID": {
+          "FNumber": "<销售单位, 如 Pcs>"
+        },
+        "FQty": 1,
+        "FPrice": 0.01,
+        "FTaxPrice": 0.01,
+        "FTaxRate": 13
+      }
+    ]
+  },
+  "SAL_SaleOrder": {
+    "_desc": "销售订单。FSaleOrgId 必填；客户 FCUSTID；分录 FSaleOrderEntry 含 FMaterialId/FUnitID/FQty/FPrice/FTaxPrice/FTaxRate。",
+    "FBillTypeID": {
+      "FNumber": "XSD01_SYS"
+    },
+    "FSaleOrgId": {
+      "FNumber": "100"
+    },
+    "FCUSTID": {
+      "FNumber": "<客户编码>"
+    },
+    "FSaleOrderEntry": [
+      {
+        "FMaterialId": {
+          "FNumber": "<物料编码>"
+        },
+        "FUnitID": {
+          "FNumber": "<销售单位>"
+        },
+        "FQty": 1,
+        "FPrice": 0.01,
+        "FTaxPrice": 0.01,
+        "FTaxRate": 13
+      }
+    ]
+  },
+  "PUR_PurchaseOrder": {
+    "_desc": "采购订单。FPurchaseOrgId 必填；供应商 FSupplierId；分录 FPurchaseOrderEntry 含 FMaterialId/FUnitID/FQty/FPrice/FTaxPrice/FTaxRate。",
+    "FBillTypeID": {
+      "FNumber": "CGDD01_SYS"
+    },
+    "FPurchaseOrgId": {
+      "FNumber": "100"
+    },
+    "FSupplierId": {
+      "FNumber": "<供应商编码>"
+    },
+    "FPurchaseOrderEntry": [
+      {
+        "FMaterialId": {
+          "FNumber": "<物料编码>"
+        },
+        "FUnitID": {
+          "FNumber": "<采购单位>"
+        },
+        "FQty": 1,
+        "FPrice": 0.01,
+        "FTaxPrice": 0.01,
+        "FTaxRate": 13
+      }
+    ]
+  }
+}

@@ -35,7 +35,7 @@ class LocalAuthorizationServiceTest {
         LocalAuthorizationService service = new LocalAuthorizationService(registry);
         JsonExecutionStep step = new JsonExecutionStep("call", "s1", null, Map.of(), null,
                 List.of(), null, null, List.of(), "order.create", 1);
-        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", "e1", "i1", "1.0.0",
+        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "t1", 1L, "i1", "1.0.0",
                 "artifact", "catalog", "", "2026-09-17T00:00:00Z", "BEST_EFFORT_CURRENT",
                 "创建订单", List.of(step), null);
 

@@ -244,16 +244,19 @@ class WrenRuntime:
             if not sql or not sql.strip():
                 raise ValueError("sql is required")
             limit = max(1, min(int(limit), MAX_RESULT_ROWS))
+            # 查询时多取一行判断是否达到安全上限；达到上限说明可能被截断，标记 truncated=true。
             table = self.engine(source_key).query(sql, limit + 1)
             if expected_mdl_digest and expected_mdl_digest != self.mdl_digest():
                 raise ValueError("MDL digest changed during request; discard the query result")
-            if table.num_rows > limit:
-                raise ValueError("query result exceeds the configured completeness limit; aggregate in SQL")
+            truncated = table.num_rows > limit
+            if truncated:
+                # 达到安全上限时只取前 limit 行，避免无界内存消耗。
+                table = table.slice(0, limit)
             return {
                 "columns": table.column_names,
                 "rows": table.to_pylist(),
                 "rowCount": table.num_rows,
-                "truncated": False,
+                "truncated": truncated,
             }
 
     def dry_plan(self, source_key: str, sql: str) -> dict[str, str]:
@@ -314,7 +317,7 @@ def _generate_sql(question: str, llm: dict[str, Any], manifest: dict[str, Any],
                     '"label":"..."}],"allowFreeText":true}}. '
                     "Clarification options must contain 2 to 5 exact Model.column identifiers from the Wren schema. "
                     "Do not ask when a column can be qualified mechanically without changing business meaning. "
-                    "sql must contain exactly one read-only query using MDL model names; SELECT * is forbidden. "
+                    "sql must contain exactly one read-only query using MDL model names; SELECT * and LIMIT are forbidden. "
                     "Every final projection must have an explicit stable alias. Do not output Markdown. "
                     "Use only the retrieved Wren schema and obey all business rules.\n"
                     "Wren schema:\n" + context["schema"]
@@ -358,6 +361,9 @@ def _generate_sql(question: str, llm: dict[str, Any], manifest: dict[str, Any],
     sql = generated.get("sql")
     if not isinstance(sql, str):
         raise ValueError("LLM SQL result is missing sql")
+    # 模型偶尔忽略提示词中的 LIMIT 禁令；生成路径确定性移除顶层 LIMIT，
+    # 由 Adapter 的 completeness limit 统一控制行数，避免双重 LIMIT。
+    sql = _strip_query_limit(sql)
     _validate_read_only_sql(sql)
     lineage = _derive_lineage(sql, manifest)
     return {
@@ -366,6 +372,15 @@ def _generate_sql(question: str, llm: dict[str, Any], manifest: dict[str, Any],
         "columnLineage": lineage,
         "retrievalStrategy": context["strategy"],
     }
+
+
+def _strip_query_limit(sql: str) -> str:
+    """移除单条只读查询的顶层 LIMIT，嵌套 LIMIT 仍交给只读校验拒绝。"""
+    statements = sqlglot.parse(sql)
+    if len(statements) == 1 and isinstance(statements[0], exp.Query):
+        statements[0].args.pop("limit", None)
+        return statements[0].sql()
+    return sql
 
 
 def _validate_clarification(clarification: Any, manifest: dict[str, Any], question: str,
@@ -423,7 +438,7 @@ def _validate_clarification(clarification: Any, manifest: dict[str, Any], questi
 
 
 def _validate_read_only_sql(sql: str) -> None:
-    """使用 SQL AST 拒绝多语句、写操作和无法约束输出列的星号投影。"""
+    """使用 SQL AST 拒绝多语句、写操作、LIMIT 和无法约束输出列的星号投影。"""
     statements = sqlglot.parse(sql)
     if len(statements) != 1 or not isinstance(statements[0], exp.Query):
         raise ValueError("exactly one read-only query is required")
@@ -431,6 +446,9 @@ def _validate_read_only_sql(sql: str) -> None:
     forbidden = (exp.Insert, exp.Update, exp.Delete, exp.Create, exp.Drop, exp.Alter, exp.Command, exp.Merge)
     if any(statement.find(node_type) is not None for node_type in forbidden):
         raise ValueError("write or administrative SQL is forbidden")
+    # 生成路径会移除顶层 LIMIT；任何剩余 LIMIT 都会与 Adapter 统一追加的 LIMIT 冲突。
+    if any(isinstance(node, exp.Limit) for node in statement.find_all(exp.Limit)):
+        raise ValueError("LIMIT is forbidden; the adapter enforces the result row limit")
     for star in statement.find_all(exp.Star):
         if not isinstance(star.parent, exp.Count):
             raise ValueError("SELECT * is forbidden; output columns must be explicit")

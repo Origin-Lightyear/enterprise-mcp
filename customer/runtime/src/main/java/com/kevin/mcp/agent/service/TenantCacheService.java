@@ -102,10 +102,10 @@ public class TenantCacheService {
      * 综合租户状态、授权截止时间和员工状态判断当前请求是否允许继续执行。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return 是否允许当前请求
      */
-    public boolean isTenantRequestAllowed(String tenantId, String employeeId) {
+    public boolean isTenantRequestAllowed(String tenantId, Long employeeId) {
         EmployeeAuth employeeAuth = this.employeeAuthCache.get(this.buildEmployeeKey(tenantId, employeeId));
         if (TenantAvailability.AVAILABLE != this.getTenantAvailability(tenantId) || employeeAuth == null) {
             return false;
@@ -139,10 +139,10 @@ public class TenantCacheService {
      * 读取员工鉴权快照，供权限审查复用已刷新的有效规则。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return 员工鉴权快照，未命中时返回 null
      */
-    public EmployeeAuth getEmployeeAuth(String tenantId, String employeeId) {
+    public EmployeeAuth getEmployeeAuth(String tenantId, Long employeeId) {
         return this.employeeAuthCache.get(this.buildEmployeeKey(tenantId, employeeId));
     }
 
@@ -155,7 +155,7 @@ public class TenantCacheService {
         return tenantId + ":" + nonce;
     }
 
-    private String buildEmployeeKey(String tenantId, String employeeId) {
+    private String buildEmployeeKey(String tenantId, Long employeeId) {
         return tenantId + ":" + employeeId;
     }
 }

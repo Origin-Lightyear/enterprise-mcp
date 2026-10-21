@@ -2,6 +2,12 @@ package com.customer.mcp.bootstrap;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.aop.support.AopUtils;
+import com.customer.mcp.tool.publicmcp.K3ExploreTool;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 验证客户 Fat JAR 的 Spring Bean 依赖可以完整装配。
@@ -11,6 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
  */
 @SpringBootTest(properties = {
         "enterprise.wren.enabled=false",
+        "enterprise.debug.enabled=false",
+        "enterprise.k3.enabled=true",
         "enterprise.wren.admin-token=test-admin-token",
         "saas.verify.agent-public-key-pem="
                 + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAm1kqdjC5dglLfizpvid0axXg0v5S2+MmJ9BjC5b9OfCfM8RHDwCG"
@@ -22,8 +30,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 })
 class CustomerMcpApplicationTest {
 
+    @Autowired
+    private K3ExploreTool exploreTool;
+
     /** 验证应用上下文能够启动。 */
     @Test
     void contextLoads() {
+        assertTrue(AopUtils.isAopProxy(exploreTool));
+        assertThrows(SecurityException.class, () -> exploreTool.searchForms("采购订单", null));
     }
 }

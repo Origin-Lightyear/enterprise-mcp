@@ -2,17 +2,24 @@
 
 `customer/app` 是客户侧唯一主程序，也是新增客户时主要修改的模块。最终客户只部署这里生成的一个 Spring Boot Fat JAR。
 
-## 放什么
+## 包结构
 
-- `bootstrap`：客户启动类和能力装配。
-- `capability`：客户的 `@PrivateMcpTool` 与 `@LocalCapability`。
-- `configuration`：客户能力注册和客户专属 Spring 装配。
-- `domain`：客户领域对象。
-- `repository`：客户 Mapper/Repository，需要时创建。
-- `integration`：客户内部 HTTP、SDK 或其他系统 Adapter，需要时创建。
-- `src/main/resources/sql`：客户固定 SQL 模板，需要时创建。
-- `src/main/resources/mapper`：客户 MyBatis XML，需要时创建。
-- `application.yml`：无密钥默认配置；生产值由外置配置覆盖。
+| 包 | 职责 |
+|---|---|
+| `com.customer.mcp` | 客户启动类 `CustomerMcpApplication`。 |
+| `com.customer.mcp.controller` | 客户侧 HTTP Controller，如运行健康检查。 |
+| `com.customer.mcp.domain` | 客户领域对象。`ErpOrder` 是新增领域实体的示例代码，可按同样风格扩展。 |
+| `com.customer.mcp.tool.publicmcp` | 公开 MCP 工具，标注 `@PublicMcpTool`，已验证员工可通过 Agent 直接调用。 |
+| `com.customer.mcp.tool.internalmcp` | 内部 MCP 工具，标注 `@PrivateMcpTool` 或经内部门面转发，仅在 Runtime/Tenant 链路内使用。 |
+| `com.customer.mcp.k3` | 金蝶 K3 领域层：`catalog`（现场目录）、`client`（SDK 网关）、`errors`（错误模式）、`knowledge`（本地确认知识）。 |
+| `com.customer.mcp.wren` | Wren 本机语义查询领域层：Sidecar 客户端、进程管理、管理端 Controller/Session/Filter。 |
+
+## 新增 MCP 工具
+
+- 公开工具放 `tool/publicmcp`，方法标 `@McpTool` + `@PublicMcpTool`。
+- 内部工具放 `tool/internalmcp`，方法标 `@McpTool` 或 `@PrivateMcpTool`。
+- 领域逻辑放 `k3`/`wren` 或新领域包，工具类保持薄封装。
+- 领域实体放 `domain`，参考 `ErpOrder` 的注解与 Javadoc 风格。
 
 客户专属代码不能放到 `customer/runtime`，云端代码不能放到本模块。
 
@@ -30,10 +37,7 @@ mvn -pl customer/app -am clean package
 customer/app/target/customer-enterprise-mcp-1.0.0.jar
 ```
 
-运行时 Registry 会自动扫描 Spring Bean 上的 `@PrivateMcpTool` 与 `@LocalCapability`。构建会生成并打包：
-
-```text
-```
+运行时 Registry 会自动扫描 Spring Bean 上的 `@McpTool`、`@PublicMcpTool`、`@PrivateMcpTool` 与 `@LocalCapability`。
 
 ## 启动
 

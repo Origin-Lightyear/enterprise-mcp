@@ -33,7 +33,7 @@ class JsonPlanParserTest {
     /** 验证每个不可变绑定字段都必须存在。 */
     @Test
     void shouldRejectMissingImmutableBindingField() {
-        String[] fields = {"tenantId", "employeeId", "instanceId", "runtimeVersion", "artifactDigest",
+        String[] fields = {"tenantId", "instanceId", "runtimeVersion", "artifactDigest",
                 "catalogDigest", "asOf", "consistencyMode"};
         for (String field : fields) {
             String fragment = "\"" + field + "\":\"" + fieldValue(field) + "\",";
@@ -44,10 +44,25 @@ class JsonPlanParserTest {
         }
     }
 
+    /** 验证上游数字字符串 employeeId 会被兼容解析为 Long。 */
+    @Test
+    void shouldAcceptEmployeeIdAsNumericString() {
+        var plan = parser.parse(validPlan().replace("\"employeeId\":1001,", "\"employeeId\":\"1001\","));
+        org.assertj.core.api.Assertions.assertThat(plan.employeeId()).isEqualTo(1001L);
+    }
+
+    /** 验证非数字 employeeId 在协议入口直接拒绝。 */
+    @Test
+    void shouldRejectNonNumericEmployeeId() {
+        assertThatThrownBy(() -> parser.parse(validPlan().replace("\"employeeId\":1001,", "\"employeeId\":\"employee-1\",")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Long field is invalid");
+    }
+
     private String validPlan() {
         return """
                 {"planId":"plan-1","planContractVersion":1,"tenantId":"tenant-1",\
-                "employeeId":"employee-1","instanceId":"instance-1","runtimeVersion":"1.0.0",\
+                "employeeId":1001,"instanceId":"instance-1","runtimeVersion":"1.0.0",\
                 "artifactDigest":"artifact","catalogDigest":"catalog","asOf":"2026-09-17T00:00:00Z",\
                 "consistencyMode":"BEST_EFFORT_CURRENT","intent":"查询",\
                 "steps":[{"type":"call","id":"step-1","capabilityId":"capability-1",\
@@ -58,7 +73,6 @@ class JsonPlanParserTest {
     private String fieldValue(String field) {
         return switch (field) {
             case "tenantId" -> "tenant-1";
-            case "employeeId" -> "employee-1";
             case "instanceId" -> "instance-1";
             case "runtimeVersion" -> "1.0.0";
             case "artifactDigest" -> "artifact";

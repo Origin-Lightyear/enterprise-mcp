@@ -82,10 +82,10 @@ public class HttpAgentServerClient {
      * 拉取指定租户员工的鉴权快照。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return 员工鉴权信息
      */
-    public EmployeeAuth fetchTenantAuth(String tenantId, String employeeId) {
+    public EmployeeAuth fetchTenantAuth(String tenantId, Long employeeId) {
         return this.tenantRestClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/api/v1/agent/inner/employee-permission")
                         .queryParam("tenantId", tenantId)
@@ -102,10 +102,10 @@ public class HttpAgentServerClient {
      * 并按 endpoint 能力分别选择生成、向量与重排模型，禁止依赖模型列表顺序。</p>
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return 员工 LLM 调用配置
      */
-    public EmployeeLlmInvocationConfig fetchEmployeeLlmConfig(String tenantId, String employeeId) {
+    public EmployeeLlmInvocationConfig fetchEmployeeLlmConfig(String tenantId, Long employeeId) {
         Map<?, ?> data = this.readApiResult(this.tenantRestClient.post()
                 .uri("/api/v1/agent/inner/employee-llm-config")
                 .body(Map.of("tenantId", tenantId, "employeeId", employeeId))

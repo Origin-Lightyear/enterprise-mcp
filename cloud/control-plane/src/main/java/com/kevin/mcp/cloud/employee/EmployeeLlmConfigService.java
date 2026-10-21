@@ -74,11 +74,11 @@ public class EmployeeLlmConfigService {
      * 返回员工当前可用的 LLM 调用配置；硬过期后同步刷新，失败时拒绝沿用旧密钥。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return 已按 endpoint 能力解析模型角色的员工 LLM 调用配置
      * @throws IOException Tenant 或 NewAPI 调用失败
      */
-    public EmployeeLlmInvocationConfig getConfig(String tenantId, String employeeId) throws IOException {
+    public EmployeeLlmInvocationConfig getConfig(String tenantId, Long employeeId) throws IOException {
         CacheKey cacheKey = buildCacheKey(tenantId, employeeId);
         Instant now = clock.instant();
         CacheEntry cachedEntry = configCache.get(cacheKey);
@@ -121,11 +121,11 @@ public class EmployeeLlmConfigService {
                 .ifPresent(entry -> configCache.remove(entry.getKey(), entry.getValue()));
     }
 
-    private CacheKey buildCacheKey(String tenantId, String employeeId) {
-        if (isBlank(tenantId) || isBlank(employeeId)) {
+    private CacheKey buildCacheKey(String tenantId, Long employeeId) {
+        if (isBlank(tenantId) || employeeId == null || employeeId <= 0) {
             throw new IllegalArgumentException("Tenant ID and employee ID are required for employee LLM config");
         }
-        return new CacheKey(tenantId.trim(), employeeId.trim());
+        return new CacheKey(tenantId.trim(), employeeId);
     }
 
     private boolean isBlank(String value) {
@@ -136,11 +136,11 @@ public class EmployeeLlmConfigService {
      * 定义租户与员工复合缓存键，避免字符串拼接歧义和跨租户串用配置。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @author Kevin
      * @date 2026-09-10
      */
-    private record CacheKey(String tenantId, String employeeId) {
+    private record CacheKey(String tenantId, Long employeeId) {
     }
 
     /**

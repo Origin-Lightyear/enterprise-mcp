@@ -58,7 +58,8 @@ public class PlanningGatewayClient {
             }
             return plan;
         } catch (RestClientResponseException exception) {
-            throw new IllegalStateException("Planning Gateway rejected plan request: HTTP " + exception.getStatusCode().value(), exception);
+            throw new IllegalStateException("Planning Gateway rejected plan request: HTTP "
+                    + exception.getStatusCode().value() + ", response=" + responseBody(exception), exception);
         }
     }
 
@@ -80,6 +81,16 @@ public class PlanningGatewayClient {
      */
     public Map<?, ?> referenceCatalog(Map<String, Object> reference) {
         return exchangeCatalog(properties.catalogReferenceUrl(), reference, true);
+    }
+
+    /**
+     * 上传客户 Runtime 筛选后的结构知识快照。
+     *
+     * @param snapshot 带身份绑定和摘要的知识快照
+     * @return Control Plane 确认响应
+     */
+    public Map<?, ?> uploadKnowledge(Map<String, Object> snapshot) {
+        return exchangeCatalog(properties.knowledgeSnapshotUrl(), snapshot, false);
     }
 
     private Map<?, ?> exchangeCatalog(String url, Map<String, Object> payload, boolean put) {

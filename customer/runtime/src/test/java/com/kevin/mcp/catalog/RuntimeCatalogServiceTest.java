@@ -157,7 +157,7 @@ class RuntimeCatalogServiceTest {
     }
 
     private JsonExecutionPlan plan(PlanningBinding binding, String mdlDigest) {
-        return new JsonExecutionPlan("plan-1", 1, binding.tenantId(), "employee-1", binding.instanceId(),
+        return new JsonExecutionPlan("plan-1", 1, binding.tenantId(), 1001L, binding.instanceId(),
                 binding.artifactVersion(), binding.artifactDigest(), binding.catalogDigest(), mdlDigest,
                 "2026-09-18T00:00:00Z", "BEST_EFFORT_CURRENT", "query", List.of(), null);
     }

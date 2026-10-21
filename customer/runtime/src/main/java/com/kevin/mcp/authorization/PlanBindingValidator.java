@@ -36,9 +36,9 @@ public class PlanBindingValidator {
      *
      * @param plan 云端执行计划
      * @param tenantId 当前已验证租户
-     * @param employeeId 当前已验证员工
+     * @param employeeId 当前已验证员工编号
      */
-    public void validate(JsonExecutionPlan plan, String tenantId, String employeeId) {
+    public void validate(JsonExecutionPlan plan, String tenantId, Long employeeId) {
         if (plan == null || !Integer.valueOf(SUPPORTED_PLAN_CONTRACT_VERSION).equals(plan.planContractVersion())) {
             throw new SecurityException("Unsupported execution plan contract version");
         }
@@ -55,7 +55,7 @@ public class PlanBindingValidator {
         }
     }
 
-    private void requireEqual(String expected, String actual, String fieldName) {
+    private void requireEqual(Object expected, Object actual, String fieldName) {
         if (expected == null || !expected.equals(actual)) {
             throw new SecurityException(fieldName + " does not match the current request");
         }

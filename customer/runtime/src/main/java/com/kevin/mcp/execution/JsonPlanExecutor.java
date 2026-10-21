@@ -1,6 +1,7 @@
 package com.kevin.mcp.execution;
 
 import com.kevin.mcp.catalog.RuntimeCatalog;
+import com.kevin.mcp.capability.LocalCapabilityDescriptor;
 import com.kevin.mcp.capability.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.processor.JsonExecutionPlan;
 import com.kevin.mcp.processor.JsonExecutionResult;
@@ -235,7 +236,8 @@ public class JsonPlanExecutor {
             bean = this.registry.getRegisteredBean(step.methodKey())
                     .orElseThrow(() -> new IllegalArgumentException("Bean not found: " + step.methodKey()));
         }
-        Object[] arguments = this.resolveArguments(method, step.args(), visibleValues, currentItem);
+        Object[] arguments = this.resolveArguments(method,
+                this.withDefaultsForOmittedOptionalArguments(method, step), visibleValues, currentItem);
         try {
             ReflectionUtils.makeAccessible(method);
             return method.invoke(bean, arguments);
@@ -319,6 +321,39 @@ public class JsonPlanExecutor {
     }
 
     /**
+     * 按 Schema 补齐计划中省略的可选参数，保持云端规划契约与本地反射契约一致。
+     *
+     * @param method 本地能力方法
+     * @param step 当前调用步骤
+     * @return 合并默认值后的参数映射
+     */
+    private Map<String, Object> withDefaultsForOmittedOptionalArguments(Method method, JsonExecutionStep step) {
+        Map<String, Object> arguments = step.args() == null ? Map.of() : step.args();
+        String methodKey = this.registry.getCapability(step.capabilityId())
+                .map(LocalCapabilityDescriptor::methodKey)
+                .orElse(null);
+        com.kevin.mcp.registry.PrivateMcpToolSchemaDescriptor descriptor = methodKey == null
+                ? null : this.registry.getAllMethodSchemas().get(methodKey);
+        com.kevin.mcp.registry.PrivateMcpToolSchemaDescriptor.MethodSchema inputSchema =
+                descriptor == null ? null : descriptor.inputSchema();
+        if (inputSchema == null) {
+            return arguments;
+        }
+        Map<String, Object> normalizedArguments = new LinkedHashMap<>(arguments);
+        List<String> omittedRequired = inputSchema.required().stream()
+                .filter(name -> !normalizedArguments.containsKey(name))
+                .toList();
+        if (!omittedRequired.isEmpty()) {
+            throw new IllegalArgumentException("Missing parameter: " + String.join(", ", omittedRequired));
+        }
+        inputSchema.properties().stream()
+                .map(com.kevin.mcp.registry.PrivateMcpToolSchemaDescriptor.SchemaProperty::name)
+                .filter(name -> !normalizedArguments.containsKey(name))
+                .forEach(name -> normalizedArguments.put(name, null));
+        return normalizedArguments;
+    }
+
+    /**
      * 将参数映射绑定为反射调用所需的位置参数数组。
      *
      * @param method 目标方法
@@ -335,15 +370,35 @@ public class JsonPlanExecutor {
     ) {
         Parameter[] methodParameters = method.getParameters();
         Object[] arguments = new Object[methodParameters.length];
+        Map<String, Object> normalizedArguments = this.normalizeArgumentNames(argumentsMap);
         for (int index = 0; index < methodParameters.length; index++) {
             Parameter parameter = methodParameters[index];
-            if (!argumentsMap.containsKey(parameter.getName())) {
+            if (!normalizedArguments.containsKey(parameter.getName())) {
                 throw new IllegalArgumentException("Missing parameter: " + parameter.getName());
             }
-            Object resolvedValue = this.resolveParameterValue(argumentsMap.get(parameter.getName()), visibleValues, currentItem);
+            Object resolvedValue = this.resolveParameterValue(normalizedArguments.get(parameter.getName()), visibleValues, currentItem);
             arguments[index] = this.convertArgumentValue(resolvedValue, parameter.getType(), parameter.getName());
         }
         return arguments;
+    }
+
+    /**
+     * 兼容未开启 -parameters 编译时的 argN 参数名。
+     *
+     * @param argumentsMap 计划中的参数映射
+     * @return 按实际反射参数名可命中的映射
+     */
+    private static Map<String, Object> normalizeArgumentNames(Map<String, Object> argumentsMap) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : argumentsMap.entrySet()) {
+            normalized.put(entry.getKey(), entry.getValue());
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^arg([0-9]+)$")
+                    .matcher(entry.getKey());
+            if (matcher.matches()) {
+                normalized.put("arg" + Integer.parseInt(matcher.group(1)), entry.getValue());
+            }
+        }
+        return normalized;
     }
 
     /**

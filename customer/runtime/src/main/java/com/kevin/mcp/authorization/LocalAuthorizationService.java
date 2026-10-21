@@ -1,6 +1,7 @@
 package com.kevin.mcp.authorization;
 
 import com.kevin.mcp.annotation.OperationMode;
+import com.kevin.mcp.annotation.PublicMcpTool;
 import com.kevin.mcp.capability.LocalCapabilityDescriptor;
 import com.kevin.mcp.capability.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.processor.JsonExecutionPlan;
@@ -42,6 +43,19 @@ public class LocalAuthorizationService {
     }
 
     /**
+     * 校验公开探索能力的只读声明，供 AOP 在调用前统一执行。
+     *
+     * @param capability 公开工具契约
+     */
+    public void authorizePublicCapability(PublicMcpTool capability) {
+        if (capability == null || capability.capabilityId().isBlank()
+                || !capability.capabilityId().startsWith("k3.")
+                || capability.description().isBlank()) {
+            throw new SecurityException("Public MCP capability declaration is invalid");
+        }
+    }
+
+    /**
      * 校验单步能力并递归检查 foreach 循环体。
      *
      * @param step 当前步骤
@@ -65,3 +79,4 @@ public class LocalAuthorizationService {
         }
     }
 }
+

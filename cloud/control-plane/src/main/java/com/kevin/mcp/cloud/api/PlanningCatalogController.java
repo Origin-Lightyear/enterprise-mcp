@@ -5,6 +5,8 @@ import com.kevin.mcp.cloud.catalog.CatalogCandidate;
 import com.kevin.mcp.cloud.catalog.CatalogConfirmation;
 import com.kevin.mcp.cloud.catalog.RuntimeCatalogReference;
 import com.kevin.mcp.cloud.catalog.RuntimeRegistration;
+import com.kevin.mcp.cloud.catalog.PlanningKnowledgeService;
+import java.util.Map;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -24,14 +26,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class PlanningCatalogController {
 
     private final PlanningCatalogService catalogService;
+    private final PlanningKnowledgeService knowledgeService;
 
     /**
      * 注入目录服务。
      *
      * @param catalogService 目录服务
+     * @param knowledgeService 结构知识快照服务
      */
-    public PlanningCatalogController(PlanningCatalogService catalogService) {
+    public PlanningCatalogController(PlanningCatalogService catalogService,
+                                     PlanningKnowledgeService knowledgeService) {
         this.catalogService = catalogService;
+        this.knowledgeService = knowledgeService;
     }
 
     /**
@@ -54,6 +60,17 @@ public class PlanningCatalogController {
     @PutMapping("/runtime-catalog-references")
     public RuntimeRegistration reference(@RequestBody RuntimeCatalogReference reference) {
         return catalogService.reference(reference);
+    }
+
+    /**
+     * 保存 Runtime 上传的金蝶规划知识快照。
+     *
+     * @param upload 绑定当前 Runtime 身份的知识快照
+     * @return 已确认摘要
+     */
+    @PostMapping("/knowledge-snapshots")
+    public Map<String, String> uploadKnowledge(@RequestBody KnowledgeSnapshotUpload upload) {
+        return knowledgeService.upload(upload);
     }
 
 }

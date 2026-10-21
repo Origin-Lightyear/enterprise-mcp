@@ -1,0 +1,157 @@
+[
+  {
+    "id": "p01",
+    "match": "502",
+    "reason": "金蝶不支持 HTTP/2，需显式传 http1=True",
+    "suggestion": "确保 httpx AsyncHTTPTransport(http1=True)",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p02",
+    "match": "Bad Gateway",
+    "reason": "同上，金蝶服务器不支持 HTTP/2",
+    "suggestion": "同上",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p03",
+    "match": "会话",
+    "reason": "Session 过期或未登录",
+    "suggestion": "调用 _login() 重新登录",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p04",
+    "match": "session",
+    "reason": "Session 过期（英文原文）",
+    "suggestion": "调用 _login() 重新登录",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p05",
+    "match": "关联数量",
+    "reason": "累计关联数量已达订单数量，无法下推",
+    "suggestion": "检查 FReceiveQty+FStockInQty 是否已满",
+    "nextActionTool": "k3_query_data",
+    "nextActionArgsHint": "源单 FBillNo"
+  },
+  {
+    "id": "p06",
+    "match": "业务关闭",
+    "reason": "该行已业务关闭，不允许操作",
+    "suggestion": "检查 FBusinessClose 状态或联系管理员反关闭",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p07",
+    "match": "冻结",
+    "reason": "分录行已冻结，不允许编辑和关联操作",
+    "suggestion": "联系管理员解冻后重试",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p08",
+    "match": "终止",
+    "reason": "分录行已终止，不允许关联操作",
+    "suggestion": "检查 FTerminateStatus 状态",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p09",
+    "match": "交货数量",
+    "reason": "超过交货数量控制范围",
+    "suggestion": "检查 FDlyCntl_Low/High 配置",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p10",
+    "match": "权限",
+    "reason": "集成用户没有对应单据的操作权限",
+    "suggestion": "联系金蝶管理员开通权限",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p11",
+    "match": "字段不存在",
+    "reason": "字段在当前账套/模块中未启用",
+    "suggestion": "先用 k3_describe_form 确认可用字段，或改用替代字段",
+    "nextActionTool": "k3_describe_form",
+    "nextActionArgsHint": "form_id"
+  },
+  {
+    "id": "p11a",
+    "match": "排序条件",
+    "reason": "金蝶分页查询要求单据有主键或显式 OrderString，当前表单无默认主键",
+    "suggestion": "在 k3_query_data 的 order 参数传入本次 FieldKeys 中的有效字段 asc/desc，如 FAccountID.FNumber asc；无 FID 的汇总表单禁止用 FID 排序",
+    "nextActionTool": "k3_query_data",
+    "nextActionArgsHint": "formId,fieldKeys,filterString,order,startRow,limit"
+  },
+  {
+    "id": "p12",
+    "match": "保存失败",
+    "reason": "下推或保存失败，详情见 ConvertResponseStatus",
+    "suggestion": "检查 ConvertResponseStatus 每行错误原因",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p13",
+    "match": "已被其他用户修改",
+    "reason": "乐观锁冲突，单据被并发修改",
+    "suggestion": "先用 k3_query_data 重新读取最新业务数据，再判断是否可继续操作",
+    "nextActionTool": "k3_query_data",
+    "nextActionArgsHint": "form_id, bill_id"
+  },
+  {
+    "id": "p14",
+    "match": "已存在",
+    "reason": "唯一键冲突 (FBillNo / FNumber 重复)",
+    "suggestion": "检查是否重复 Save，或换一个编码",
+    "nextActionTool": "k3_query_data",
+    "nextActionArgsHint": "form_id, FBillNo / FNumber"
+  },
+  {
+    "id": "p15",
+    "match": "不能为空",
+    "reason": "必录字段缺失",
+    "suggestion": "先用 k3_describe_form 查必录项后再补齐参数",
+    "nextActionTool": "k3_describe_form",
+    "nextActionArgsHint": "form_id"
+  },
+  {
+    "id": "p16",
+    "match": "已审核",
+    "reason": "单据已审核，不允许再次提交/审核",
+    "suggestion": "当前只读 MCP 不支持反审核，请先人工反审核或联系金蝶管理员",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p17",
+    "match": "非草稿",
+    "reason": "单据非草稿状态，不允许 Submit",
+    "suggestion": "确认单据状态后再决定下一步",
+    "nextActionTool": null,
+    "nextActionArgsHint": null
+  },
+  {
+    "id": "p18",
+    "match": "基础资料",
+    "reason": "外键引用不存在 (物料/客户/供应商/部门)",
+    "suggestion": "用 k3_query_data 查询对应基础资料并验证 FNumber",
+    "nextActionTool": "k3_query_data",
+    "nextActionArgsHint": "FNumber"
+  }
+]
+
+
+

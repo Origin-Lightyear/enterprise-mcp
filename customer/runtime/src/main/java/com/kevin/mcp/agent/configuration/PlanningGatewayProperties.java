@@ -46,6 +46,15 @@ public class PlanningGatewayProperties {
         return controlPlaneBaseUrl() + "/runtime-catalog-references";
     }
 
+    /**
+     * 返回知识摘要上传接口地址。
+     *
+     * @return Control Plane 的知识快照入口
+     */
+    public String knowledgeSnapshotUrl() {
+        return controlPlaneBaseUrl() + "/knowledge-snapshots";
+    }
+
     private String controlPlaneBaseUrl() {
         if (url == null || url.isBlank()) {
             throw new IllegalStateException("Planning Gateway URL is not configured");

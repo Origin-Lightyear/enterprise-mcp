@@ -9,7 +9,7 @@ import java.util.List;
  * @param planId 计划唯一标识
  * @param planContractVersion 计划协议版本
  * @param tenantId 计划绑定的租户标识
- * @param employeeId 计划绑定的员工标识
+ * @param employeeId 员工编号
  * @param instanceId 计划绑定的 Runtime 实例标识
  * @param runtimeVersion 计划绑定的 Runtime 制品版本
  * @param artifactDigest 计划绑定的 Runtime 制品摘要
@@ -27,7 +27,7 @@ public record JsonExecutionPlan(
         String planId,
         Integer planContractVersion,
         String tenantId,
-        String employeeId,
+        Long employeeId,
         String instanceId,
         String runtimeVersion,
         String artifactDigest,
@@ -46,7 +46,7 @@ public record JsonExecutionPlan(
      * @param planId 计划唯一标识
      * @param planContractVersion 计划协议版本
      * @param tenantId 计划绑定的租户标识
-     * @param employeeId 计划绑定的员工标识
+     * @param employeeId 员工编号
      * @param instanceId 计划绑定的 Runtime 实例标识
      * @param runtimeVersion 计划绑定的 Runtime 制品版本
      * @param artifactDigest 计划绑定的 Runtime 制品摘要

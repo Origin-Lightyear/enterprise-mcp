@@ -13,6 +13,7 @@ package com.kevin.mcp.cloud.api;
  * @param catalogDigest Runtime 当前精确 Catalog Digest
  * @param employeeId 当前员工编号
  * @param intent 用户意图
+ * @param knowledgeDigest 客户本地知识摘要，未启用时为空
  */
 public record PlanningRequest(
         String tenantId,
@@ -20,7 +21,8 @@ public record PlanningRequest(
         String artifactVersion,
         String artifactDigest,
         String catalogDigest,
-        String employeeId,
-        String intent
+        Long employeeId,
+        String intent,
+        String knowledgeDigest
 ) {
 }

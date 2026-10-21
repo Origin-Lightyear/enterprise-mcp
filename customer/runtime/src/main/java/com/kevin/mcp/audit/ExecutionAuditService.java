@@ -87,7 +87,7 @@ public class ExecutionAuditService {
      * @param request 澄清请求及其 MDL 绑定
      * @param resolution 用户操作结果
      */
-    public void recordClarification(String tenantId, String employeeId, ClarificationRequest request,
+    public void recordClarification(String tenantId, Long employeeId, ClarificationRequest request,
                                     ClarificationResolution resolution) {
         if (request == null || resolution == null) {
             throw new IllegalArgumentException("Clarification audit request and resolution are required");
@@ -104,6 +104,30 @@ public class ExecutionAuditService {
         record.put("mdlDigest", request.mdlDigest());
         record.put("selectedOptionId", resolution.selectedOptionId());
         record.put("freeTextDigest", resolution.freeTextDigest());
+        append(record);
+    }
+
+    /**
+     * 持久化公开探索工具的调用摘要，不记录原始搜索词或业务数据。
+     *
+     * @param tenantId 租户编号
+     * @param employeeId 员工编号
+     * @param capabilityId 公开能力编号
+     * @param decision 权限决策
+     * @param paramsDigest 参数摘要
+     * @param outcome 结果状态
+     */
+    public void recordPublicToolCall(String tenantId, Long employeeId, String capabilityId,
+                                     String decision, String paramsDigest, String outcome) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("event", "PUBLIC_TOOL_CALL");
+        record.put("recordedAt", Instant.now().toString());
+        record.put("tenantId", tenantId);
+        record.put("employeeId", employeeId);
+        record.put("capabilityId", capabilityId);
+        record.put("decision", decision);
+        record.put("paramsDigest", paramsDigest);
+        record.put("outcome", outcome);
         append(record);
     }
 
@@ -129,3 +153,6 @@ public class ExecutionAuditService {
         }
     }
 }
+
+
+

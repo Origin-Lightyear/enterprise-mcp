@@ -1,0 +1,31 @@
+[
+  {
+    "id": "灵枢向量",
+    "object": "model",
+    "created": 1626777600,
+    "owned_by": "灵枢",
+    "supported_endpoint_types": [
+      "openai",
+      "embeddings"
+    ]
+  },
+  {
+    "id": "灵枢玄同",
+    "object": "model",
+    "created": 1626777600,
+    "owned_by": "灵枢",
+    "supported_endpoint_types": [
+      "openai"
+    ]
+  },
+  {
+    "id": "灵枢重排",
+    "object": "model",
+    "created": 1626777600,
+    "owned_by": "灵枢",
+    "supported_endpoint_types": [
+      "openai",
+      "jina-rerank"
+    ]
+  }
+]

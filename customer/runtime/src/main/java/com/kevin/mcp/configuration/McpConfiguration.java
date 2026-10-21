@@ -9,7 +9,9 @@ import com.kevin.mcp.resource.configuration.ResourceProfileProperties;
 import com.kevin.mcp.agent.configuration.PlanningGatewayProperties;
 import com.kevin.mcp.agent.configuration.RuntimeIdentityProperties;
 import com.kevin.mcp.agent.configuration.AgentSecurityProperties;
+import com.kevin.mcp.agent.configuration.DebugBypassProperties;
 import com.kevin.mcp.execution.ExecutionLimitsProperties;
+import com.kevin.mcp.export.ExportProperties;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,7 +25,8 @@ import java.util.Map;
 @Configuration
 @EnableConfigurationProperties({ResourceProfileProperties.class, PlanningGatewayProperties.class,
         RuntimeIdentityProperties.class, AgentSecurityProperties.class,
-        ExecutionLimitsProperties.class})
+        DebugBypassProperties.class, ExecutionLimitsProperties.class,
+        ExportProperties.class})
 public class McpConfiguration {
 
     /**

@@ -44,11 +44,11 @@ public class EmployeeLlmConfigClient {
      * 按租户和员工读取专属 LLM 配置。
      *
      * @param tenantId 租户标识
-     * @param employeeId 员工标识
+     * @param employeeId 员工编号
      * @return Tenant 返回的员工配置
      * @throws IOException 网络、状态码或响应格式异常
      */
-    public EmployeeLlmConfig fetchConfig(String tenantId, String employeeId) throws IOException {
+    public EmployeeLlmConfig fetchConfig(String tenantId, Long employeeId) throws IOException {
         String tenantBaseUrl = requireText(properties.getTenantServiceBaseUrl(),
                 "Tenant service base URL is not configured");
         String path = requireText(properties.getEmployeeLlmConfigPath(),

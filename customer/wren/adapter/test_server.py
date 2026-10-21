@@ -20,6 +20,21 @@ from .server import (
 
 
 class AdapterValidationTest(unittest.TestCase):
+    def _chat_response(self, content: str):
+        response = BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return response.read()
+
+        return Response()
+
     def test_requires_a_current_mdl_source_for_each_query(self):
         runtime = WrenRuntime({"sales": Path("sales-current")})
 
@@ -179,6 +194,35 @@ class AdapterValidationTest(unittest.TestCase):
     def test_rejects_select_star(self):
         with self.assertRaisesRegex(ValueError, "SELECT \\*"):
             _validate_read_only_sql("SELECT * FROM employee")
+
+    def test_rejects_nested_limit(self):
+        with self.assertRaisesRegex(ValueError, "LIMIT is forbidden"):
+            _validate_read_only_sql(
+                "SELECT employee.mobile AS mobile FROM (SELECT mobile FROM employee LIMIT 10) AS employee"
+            )
+
+    def test_generates_sql_without_top_level_limit(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch(
+                    "customer.wren.adapter.server.urlopen",
+                    return_value=self._chat_response(
+                        '{"outcome":"READY","sql":"SELECT employee.mobile AS mobile '
+                        'FROM employee LIMIT 10"}'
+                    ),
+                ):
+            generated = _generate_sql(
+                "查询手机号，最多10条",
+                {"baseUrl": "https://models.example/v1", "apiKey": "secret",
+                 "generationModel": "test-model"},
+                {
+                    "models": [{"name": "employee", "columns": [{"name": "mobile"}]}]
+                }, Path(directory), "employee", "digest"
+            )
+        self.assertEqual(
+            generated["sql"],
+            'SELECT employee.mobile AS mobile FROM employee'
+        )
+        self.assertEqual(generated["columnLineage"], {"mobile": ["employee.mobile"]})
 
     def test_rejects_write_sql(self):
         with self.assertRaisesRegex(ValueError, "read-only"):

@@ -1,9 +1,10 @@
 package com.kevin.mcp.tools;
 
 import com.kevin.mcp.agent.client.HttpAgentServerClient;
-import com.kevin.mcp.agent.identity.AgentVerify;
 import com.kevin.mcp.agent.identity.VerifiedEmployee;
 import com.kevin.mcp.agent.model.EmployeeAuth;
+import com.kevin.mcp.agent.identity.AgentVerify;
+import com.kevin.mcp.agent.identity.DebugIdentityProvider;
 import com.kevin.mcp.agent.model.EmployeeLlmInvocationConfig;
 import com.kevin.mcp.annotation.ExecutorType;
 import com.kevin.mcp.audit.ExecutionAuditService;
@@ -19,6 +20,7 @@ import com.kevin.mcp.clarification.ClarificationRequest;
 import com.kevin.mcp.clarification.ClarificationRequiredException;
 import com.kevin.mcp.clarification.ClarificationResolution;
 import com.kevin.mcp.execution.ExecutionProgressListener;
+import com.kevin.mcp.execution.K3BusinessException;
 import com.kevin.mcp.execution.ExecutionReceipt;
 import com.kevin.mcp.execution.JsonPlanExecutor;
 import com.kevin.mcp.execution.JsonPlanParser;
@@ -52,6 +54,7 @@ import java.util.*;
 public class CommonInternalTool {
 
     private static final Logger log = LoggerFactory.getLogger(CommonInternalTool.class);
+    /** Wren 语义澄清最多三轮；超过上限停止而不猜测执行。 */
     private static final int MAX_CLARIFICATION_ROUNDS = 3;
 
     private final AgentVerify agentVerify;
@@ -69,6 +72,7 @@ public class CommonInternalTool {
     private final ObjectProvider<SemanticModelSnapshotProvider> semanticModelProvider;
     private final RuntimeCatalog runtimeCatalog;
     private final ClarificationElicitationService clarificationElicitationService;
+    private final DebugIdentityProvider debugIdentityProvider;
 
     /**
      * 注入完整执行链路依赖。
@@ -88,6 +92,7 @@ public class CommonInternalTool {
      * @param semanticModelProvider 客户语义模型提供器
      * @param runtimeCatalog Runtime Catalog module
      * @param clarificationElicitationService MCP 澄清交互服务
+     * @param debugIdentityProvider 调试旁路身份提供器
      */
     public CommonInternalTool(
             AgentVerify agentVerify,
@@ -104,7 +109,8 @@ public class CommonInternalTool {
             PrivateMcpToolSchemaRegistry schemaRegistry,
             ObjectProvider<SemanticModelSnapshotProvider> semanticModelProvider,
             RuntimeCatalog runtimeCatalog,
-            ClarificationElicitationService clarificationElicitationService
+            ClarificationElicitationService clarificationElicitationService,
+            DebugIdentityProvider debugIdentityProvider
     ) {
         this.agentVerify = agentVerify;
         this.planningService = planningService;
@@ -121,6 +127,7 @@ public class CommonInternalTool {
         this.semanticModelProvider = semanticModelProvider;
         this.runtimeCatalog = runtimeCatalog;
         this.clarificationElicitationService = clarificationElicitationService;
+        this.debugIdentityProvider = debugIdentityProvider;
     }
 
     /**
@@ -133,17 +140,24 @@ public class CommonInternalTool {
     public Map<Boolean, String> execute(String intent, McpSyncRequestContext requestContext) {
         Instant startedAt = Instant.now();
         try {
-            VerifiedEmployee verifiedEmployee = agentVerify.verifySourceAndGetEmployee(requestContext);
-            if (verifiedEmployee == null) {
-                return Map.of(false, "身份校验失败");
+            VerifiedEmployee verifiedEmployee;
+            if (debugIdentityProvider.isEnabled()) {
+                verifiedEmployee = debugIdentityProvider.loadVerifiedEmployee();
+            } else {
+                verifiedEmployee = agentVerify.verifySourceAndGetEmployee(requestContext);
+                if (verifiedEmployee == null) {
+                    return Map.of(false, "身份校验失败");
+                }
             }
             EmployeeAuth employeeAuth = verifiedEmployee.employeeAuth();
             String clarifiedIntent = intent;
+            int semanticRounds = 0;
             for (int round = 0; round <= MAX_CLARIFICATION_ROUNDS; round++) {
                 try {
-                    return executeAttempt(clarifiedIntent, requestContext, verifiedEmployee, employeeAuth, startedAt);
+                    return executeAttempt(clarifiedIntent, requestContext, verifiedEmployee, employeeAuth,
+                            startedAt);
                 } catch (ClarificationRequiredException exception) {
-                    if (round >= MAX_CLARIFICATION_ROUNDS) {
+                    if (++semanticRounds > MAX_CLARIFICATION_ROUNDS) {
                         notifyWarning(requestContext, "需要确认的信息过多，本次未执行查询");
                         return Map.of(true, "需要确认的信息超过 " + MAX_CLARIFICATION_ROUNDS + " 轮，本次未执行查询");
                     }
@@ -156,8 +170,10 @@ public class CommonInternalTool {
                     notifyInfo(requestContext, "查询存在多种业务含义，正在请求确认");
                     ClarificationResolution resolution = clarificationElicitationService.elicit(
                             requestContext, clarification);
-                    executionAuditService.recordClarification(verifiedEmployee.tenantId(),
-                            employeeAuth.employeeId(), clarification, resolution);
+                    if (!debugIdentityProvider.isEnabled()) {
+                        executionAuditService.recordClarification(verifiedEmployee.tenantId(),
+                                employeeAuth.employeeId(), clarification, resolution);
+                    }
                     if (!resolution.accepted()) {
                         notifyInfo(requestContext, "用户已取消本次查询");
                         return Map.of(true, "已取消确认，本次未执行查询");
@@ -171,6 +187,13 @@ public class CommonInternalTool {
             }
             throw new IllegalStateException("Clarification loop terminated unexpectedly");
         } catch (Exception exception) {
+            if (exception instanceof K3BusinessException k3Error) {
+                // 金蝶已明确拒绝当前参数，必须把可执行建议交给 Agent 自纠，避免盲猜循环。
+                notifyWarning(requestContext, "金蝶查询参数需要修正");
+                log.warn("K3 business failure: {}", k3Error.getMessage());
+                return Map.of(false, "金蝶查询失败: " + k3Error.getMessage()
+                        + "。请按建议修正参数后重试，不要重复相同参数。");
+            }
             notifyError(requestContext, "执行失败，未返回部分业务结果");
             var errId = UUID.randomUUID().toString();
             log.error("客户 MCP 执行失败: ID={}, Message={}", errId, exception.getMessage(), exception);
@@ -196,21 +219,28 @@ public class CommonInternalTool {
         runtimeCatalog.requireExecutable(executionPlan);
         SemanticModelSnapshot semanticModel = semanticPlan ? requireSemanticModel() : SemanticModelSnapshot.empty();
         runtimeCatalog.requireExecutable(executionPlan);
-        boolean requiresReview = permissionReviewService.requiresReview(employeeAuth.permissionConfig());
+        boolean debugBypass = debugIdentityProvider.isEnabled();
+        boolean requiresReview = !debugBypass
+                && permissionReviewService.requiresReview(employeeAuth.permissionConfig());
         EmployeeLlmInvocationConfig llmConfig = requiresReview || semanticPlan
                 ? agentServerClient.fetchEmployeeLlmConfig(verifiedEmployee.tenantId(), employeeAuth.employeeId())
                 : null;
-        if (requiresReview) {
-            notifyInfo(requestContext, "正在校验数据访问权限");
+        PermissionReviewResult reviewResult = PermissionReviewResult.allow();
+        if (!debugBypass) {
+            if (requiresReview) {
+                notifyInfo(requestContext, "正在校验数据访问权限");
+            }
+            reviewResult = permissionReviewService.review(intent, executionPlan,
+                    employeeAuth.permissionConfig(), llmConfig, semanticModel);
         }
-        PermissionReviewResult reviewResult = permissionReviewService.review(intent, executionPlan,
-                employeeAuth.permissionConfig(), llmConfig, semanticModel);
 
-        Map<String, Object> auditSummary = buildAuditSummary(executionPlan, reviewResult, employeeAuth,
-                verifiedEmployee.tenantId(), semanticModel.digest());
-        // 本地审计必须在任何数据库或 API 调用前成功落盘。
-        executionAuditService.recordDecision(auditSummary);
-        permissionAuditOutboxService.enqueue(auditSummary);
+        if (!debugBypass) {
+            Map<String, Object> auditSummary = buildAuditSummary(executionPlan, reviewResult, employeeAuth,
+                    verifiedEmployee.tenantId(), semanticModel.digest());
+            // 本地审计必须在任何数据库或 API 调用前成功落盘。
+            executionAuditService.recordDecision(auditSummary);
+            permissionAuditOutboxService.enqueue(auditSummary);
+        }
         if (!"allow".equalsIgnoreCase(reviewResult.decision())) {
             notifyWarning(requestContext, reviewResult.userMessage());
             return reviewResult.userMessage() == null || reviewResult.userMessage().isBlank()
@@ -221,9 +251,13 @@ public class CommonInternalTool {
                 llmConfig, reviewResult, semanticModel.digest());
         try (RequestExecutionContextHolder.Scope ignored = executionContextHolder.bind(executionContext)) {
             var executionResult = jsonPlanExecutor.execute(executionPlan, progressListener(requestContext));
-            executionAuditService.record(executionPlan, executionResult);
-            Object maskedResult = permissionReviewService.maskFinalResult(
-                    executionResult.finalResult(), reviewResult);
+            if (!debugBypass) {
+                executionAuditService.record(executionPlan, executionResult);
+            }
+            Object maskedResult = debugBypass
+                    ? executionResult.finalResult()
+                    : permissionReviewService.maskFinalResult(
+                            executionResult.finalResult(), reviewResult);
             runtimeCatalog.requireExecutable(executionPlan);
             ExecutionReceipt receipt = new ExecutionReceipt(
                     executionPlan.planId(), "SUCCEEDED", executionPlan.asOf(),
@@ -385,3 +419,6 @@ public class CommonInternalTool {
     }
 
 }
+
+
+

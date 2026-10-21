@@ -22,11 +22,11 @@ class PlanBindingValidatorTest {
     void shouldRejectPlanBoundToAnotherEmployee() {
         RuntimeCatalog runtimeCatalog = mock(RuntimeCatalog.class);
         PlanBindingValidator validator = new PlanBindingValidator(runtimeCatalog);
-        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "tenant-1", "employee-2",
+        JsonExecutionPlan plan = new JsonExecutionPlan("p1", 1, "tenant-1", 1002L,
                 "instance-1", "1.0.0", "artifact", "catalog", "", "2026-09-17T00:00:00Z",
                 "BEST_EFFORT_CURRENT", "查询", List.of(), "无法生成计划");
 
-        assertThatThrownBy(() -> validator.validate(plan, "tenant-1", "employee-1"))
+        assertThatThrownBy(() -> validator.validate(plan, "tenant-1", 1001L))
                 .isInstanceOf(SecurityException.class)
                 .hasMessageContaining("employee");
     }

@@ -1,0 +1,26 @@
+{
+  "save": {
+    "nextAction": "submit",
+    "desc": "建议调用 kingdee_submit_bills 提交单据至审核队列"
+  },
+  "submit": {
+    "nextAction": "audit",
+    "desc": "建议调用 kingdee_audit_bills 审核单据"
+  },
+  "audit": {
+    "nextAction": null,
+    "desc": "操作完成，单据已生效"
+  },
+  "unaudit": {
+    "nextAction": null,
+    "desc": "已反审核，可修改后重新提交"
+  },
+  "delete": {
+    "nextAction": null,
+    "desc": "单据已删除"
+  },
+  "push": {
+    "nextAction": "submit+audit",
+    "desc": "目标单已生成，请依次调用 kingdee_submit_bills + kingdee_audit_bills"
+  }
+}

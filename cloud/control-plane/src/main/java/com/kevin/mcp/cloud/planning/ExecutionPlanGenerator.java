@@ -24,6 +24,9 @@ public class ExecutionPlanGenerator {
 
     private static final Type PLAN_TYPE = new TypeToken<Map<String, Object>>() { }.getType();
 
+    /** 同一次业务请求内允许模型根据校验错误重试的最大次数。 */
+    private static final int MAX_GENERATION_ATTEMPTS = 3;
+
     private final PlanningPrompt planningPrompt;
     private final CloudLlmClient llmClient;
     private final ExecutionPlanValidator planValidator;
@@ -53,11 +56,40 @@ public class ExecutionPlanGenerator {
      */
     public Map<String, Object> generate(String intent, String catalogJson,
                                         EmployeeLlmInvocationConfig invocationConfig) throws IOException {
-        PlanningPrompt.Messages messages = planningPrompt.build(intent, catalogJson);
-        String rawPlan = llmClient.chat(invocationConfig, messages.systemMessage(), messages.userMessage());
-        Map<String, Object> plan = parseStrictObject(rawPlan);
-        planValidator.validate(plan, intent, catalogJson);
-        return plan;
+        return generate(intent, catalogJson, "", invocationConfig);
+    }
+
+    /**
+     * 使用当前 Catalog 和客户上报的结构知识生成计划。
+     *
+     * @param intent 员工意图
+     * @param catalogJson 当前能力目录
+     * @param knowledgeJson 当前结构知识摘要内容
+     * @param invocationConfig 员工请求级模型配置
+     * @return 已校验执行计划
+     * @throws IOException 模型调用失败
+     */
+    public Map<String, Object> generate(String intent, String catalogJson, String knowledgeJson,
+                                        EmployeeLlmInvocationConfig invocationConfig) throws IOException {
+        PlanningPrompt.Messages messages = planningPrompt.build(intent, catalogJson, knowledgeJson);
+        StringBuilder userPrompt = new StringBuilder(messages.userMessage());
+        IllegalStateException lastFailure = null;
+        // 模型偶发输出重复步骤名或协议外字段；把确定性校验错误回喂给模型，可在同一次业务请求内完成自纠。
+        for (int attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
+            String rawPlan = llmClient.chat(
+                    invocationConfig, messages.systemMessage(), userPrompt.toString());
+            try {
+                Map<String, Object> plan = parseStrictObject(rawPlan);
+                planValidator.validate(plan, intent, catalogJson);
+                return plan;
+            } catch (IllegalStateException failure) {
+                lastFailure = failure;
+                userPrompt.append("\n\n上一次输出未通过确定性校验，错误：").append(failure.getMessage())
+                        .append("。请完整重新生成一个执行计划 JSON 对象，必须修复上述错误；不得解释，也不得返回部分片段。");
+            }
+        }
+        throw new IllegalStateException("LLM execution plan failed validation after "
+                + MAX_GENERATION_ATTEMPTS + " attempts: " + lastFailure.getMessage(), lastFailure);
     }
 
     private Map<String, Object> parseStrictObject(String rawPlan) {

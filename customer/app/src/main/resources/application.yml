@@ -31,6 +31,33 @@ spring:
 
 # 客户配置。
 enterprise:
+  # 金蝶云星空连接配置
+  k3:
+    enabled: ${ENTERPRISE_MCP_K3_ENABLED:true}
+    # 服务器地址,必须包含 /k3cloud/ 后缀
+    server-url: ${ENTERPRISE_MCP_K3_SERVER_URL:http://60.28.41.186:8090/k3cloud/}
+    # 账套 ID
+    acct-id: ${ENTERPRISE_MCP_K3_ACCT_ID:6937797c46fd88}
+    # 认证模式:appsecret(第三方应用授权)或 password(账号密码,携带真实用户数据权限)
+    auth-mode: ${ENTERPRISE_MCP_K3_AUTH_MODE:appsecret}
+    # 第三方应用授权凭据(auth-mode=appsecret 时生效;敏感信息建议用环境变量覆盖)
+    app-id: ${ENTERPRISE_MCP_K3_APP_ID:363000_428PQbiF5mH+QZULw55A1Yxq4I2Y7sLL}
+    app-secret: ${ENTERPRISE_MCP_K3_APP_SECRET:023a77b9af67435b9d319a621a3fd3ee}
+    # 登录用户名(两种模式都会传)
+    username: ${ENTERPRISE_MCP_K3_USERNAME:Administrator}
+    # 登录密码(auth-mode=password 时生效)
+    password: ${ENTERPRISE_MCP_K3_PASSWORD:}
+    lcid: ${ENTERPRISE_MCP_K3_LCID:2052}
+    # 表单元数据磁盘缓存目录(缓存文件名按服务器地址 md5 做多环境隔离)
+    metadata-cache-dir: ${ENTERPRISE_MCP_K3_METADATA_CACHE_DIR:./data/k3/metadata-cache}
+    knowledge-dir: ${ENTERPRISE_MCP_K3_KNOWLEDGE_DIR:./data/k3/learned}
+  # 大结果导出与下载配置。
+  export:
+    # 下载短链的对外基础地址；默认按本机服务端口拼接，独立部署必须配置公网或内网可达地址。
+    public-base-url: ${ENTERPRISE_MCP_PUBLIC_BASE_URL:http://127.0.0.1:${ENTERPRISE_MCP_PORT:6001}}
+    # 导出文件格式：xlsx 按 ERP 导出风格生成美化工作簿，csv 保留旧行为。
+    format: ${ENTERPRISE_MCP_EXPORT_FORMAT:xlsx}
+
   # 在线升级配置；开发/传统部署可替换 JAR，容器部署由宿主机 updater 替换镜像。
   upgrade:
     # 调用本地升级接口时使用的共享令牌；启用远程升级时必填，必须通过 Secret 注入。
@@ -91,6 +118,12 @@ enterprise:
     path: ${ENTERPRISE_MCP_AUDIT_PATH:./data/execution-audit.jsonl}
     outbox-directory: ${ENTERPRISE_MCP_AUDIT_OUTBOX_DIRECTORY:./data/permission-audit-outbox}
     retry-delay: ${ENTERPRISE_MCP_AUDIT_RETRY_DELAY:30s}
+
+  # 受控调试旁路开关。开启后跳过 Agent 来源验证、权限审查、脱敏和审计，仅供本地联调。
+  debug:
+    enabled: false
+    # 必须是 Tenant 中已启用员工的真实编号；开关开启时必填。
+    employee-id: 1
 
   # 员工 LLM 权限审查超时。
   permission-review:

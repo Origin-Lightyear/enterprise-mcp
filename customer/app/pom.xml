@@ -12,6 +12,12 @@
     <groupId>com.customer</groupId>
     <artifactId>customer-enterprise-mcp</artifactId>
     <version>1.0.0</version>
+    <repositories>
+        <repository>
+            <id>customer-k3-sdk</id>
+            <url>file://${project.basedir}/third-party-repository</url>
+        </repository>
+    </repositories>
     <dependencies>
         <dependency>
             <groupId>com.kevin</groupId>
@@ -27,6 +33,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.kingdee</groupId>
+            <artifactId>k3cloud-webapi-sdk</artifactId>
+            <version>8.2.0</version>
         </dependency>
     </dependencies>
     <build>
@@ -78,7 +89,7 @@
                         <id>repackage</id>
                         <goals><goal>repackage</goal></goals>
                         <configuration>
-                            <mainClass>com.customer.mcp.bootstrap.CustomerMcpApplication</mainClass>
+                            <mainClass>com.customer.mcp.CustomerMcpApplication</mainClass>
                         </configuration>
                     </execution>
                 </executions>

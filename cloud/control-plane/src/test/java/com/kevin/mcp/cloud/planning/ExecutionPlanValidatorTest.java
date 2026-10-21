@@ -32,6 +32,26 @@ class ExecutionPlanValidatorTest {
                 .hasMessageContaining("sourceKey is not present in Current MDL");
     }
 
+    /** 验证同一层重复的步骤名会在计划下发前被拒绝。 */
+    @Test
+    void shouldRejectDuplicateStepName() {
+        Map<String, Object> step = Map.of(
+                "type", "call",
+                "id", "balancePage1",
+                "capabilityId", "database.semantic-query",
+                "capabilityVersion", 1,
+                "args", Map.of("sourceKey", "finance", "question", "查询财务数据")
+        );
+        Map<String, Object> duplicatePlan = Map.of(
+                "intent", "查询财务数据",
+                "steps", List.of(step, step)
+        );
+
+        assertThatThrownBy(() -> validator.validate(duplicatePlan, "查询财务数据", catalog()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Duplicate step name at steps: balancePage1");
+    }
+
     private Map<String, Object> plan(String sourceKey) {
         return Map.of(
                 "intent", "查询财务数据",

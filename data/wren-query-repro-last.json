@@ -1,0 +1,175 @@
+{
+  "ok": true,
+  "code": "OK",
+  "message": "OK",
+  "data": {
+    "columns": [
+      "source_model",
+      "id",
+      "code",
+      "name",
+      "legal_person",
+      "tax_number",
+      "company_id",
+      "region_id",
+      "level",
+      "address",
+      "contact_phone",
+      "business_hours",
+      "status",
+      "created_at"
+    ],
+    "rows": [
+      {
+        "source_model": "OrgCompany",
+        "id": 1,
+        "code": "COMP_001",
+        "name": "棒棒糖零售集团有限公司",
+        "legal_person": "张伟",
+        "tax_number": "91110000123456789X",
+        "company_id": null,
+        "region_id": null,
+        "level": null,
+        "address": null,
+        "contact_phone": null,
+        "business_hours": null,
+        "status": 1,
+        "created_at": "2026-08-01 00:13:13"
+      },
+      {
+        "source_model": "OrgStore",
+        "id": 1,
+        "code": "S_BJ_CY",
+        "name": "北京朝阳旗舰店",
+        "legal_person": null,
+        "tax_number": null,
+        "company_id": 1,
+        "region_id": 5,
+        "level": "A",
+        "address": "北京市朝阳区三里屯路1号",
+        "contact_phone": "010-88880001",
+        "business_hours": null,
+        "status": 1,
+        "created_at": "2026-08-01 00:13:13"
+      },
+      {
+        "source_model": "OrgStore",
+        "id": 2,
+        "code": "S_SH_LJZ",
+        "name": "上海陆家嘴店",
+        "legal_person": null,
+        "tax_number": null,
+        "company_id": 1,
+        "region_id": 6,
+        "level": "A",
+        "address": "上海市浦东新区陆家嘴环路2号",
+        "contact_phone": "021-88880002",
+        "business_hours": null,
+        "status": 1,
+        "created_at": "2026-08-01 00:13:13"
+      },
+      {
+        "source_model": "OrgStore",
+        "id": 3,
+        "code": "S_SH_JA",
+        "name": "上海静安社区店",
+        "legal_person": null,
+        "tax_number": null,
+        "company_id": 1,
+        "region_id": 6,
+        "level": "C",
+        "address": "上海市静安区南京西路3号",
+        "contact_phone": "021-88880003",
+        "business_hours": null,
+        "status": 1,
+        "created_at": "2026-08-01 00:13:13"
+      },
+      {
+        "source_model": "OrgStore",
+        "id": 5,
+        "code": "S_HZ_XH",
+        "name": "杭州西湖店",
+        "legal_person": null,
+        "tax_number": null,
+        "company_id": 1,
+        "region_id": 7,
+        "level": "B",
+        "address": "杭州市西湖区文三路5号",
+        "contact_phone": "0571-88880005",
+        "business_hours": "09:00-21:00",
+        "status": 1,
+        "created_at": "2026-08-01 00:30:54"
+      },
+      {
+        "source_model": "OrgStore",
+        "id": 6,
+        "code": "S_SZ_NS",
+        "name": "深圳南山店",
+        "legal_person": null,
+        "tax_number": null,
+        "company_id": 1,
+        "region_id": 15,
+        "level": "B",
+        "address": "深圳市南山区科技园6号",
+        "contact_phone": "0755-88880006",
+        "business_hours": "09:00-21:00",
+        "status": 1,
+        "created_at": "2026-08-01 00:30:54"
+      }
+    ],
+    "rowCount": 6,
+    "truncated": false,
+    "columnLineage": {
+      "source_model": [],
+      "id": [
+        "retail_erp_demo:OrgCompany.id",
+        "retail_erp_demo:OrgStore.id"
+      ],
+      "code": [
+        "retail_erp_demo:OrgCompany.code",
+        "retail_erp_demo:OrgStore.code"
+      ],
+      "name": [
+        "retail_erp_demo:OrgCompany.name",
+        "retail_erp_demo:OrgStore.name"
+      ],
+      "legal_person": [
+        "retail_erp_demo:OrgCompany.legal_person"
+      ],
+      "tax_number": [
+        "retail_erp_demo:OrgCompany.tax_number"
+      ],
+      "company_id": [
+        "retail_erp_demo:OrgStore.company_id"
+      ],
+      "region_id": [
+        "retail_erp_demo:OrgStore.region_id"
+      ],
+      "level": [
+        "retail_erp_demo:OrgStore.level"
+      ],
+      "address": [
+        "retail_erp_demo:OrgStore.address"
+      ],
+      "contact_phone": [
+        "retail_erp_demo:OrgStore.contact_phone"
+      ],
+      "business_hours": [
+        "retail_erp_demo:OrgStore.business_hours"
+      ],
+      "status": [
+        "retail_erp_demo:OrgCompany.status",
+        "retail_erp_demo:OrgStore.status"
+      ],
+      "created_at": [
+        "retail_erp_demo:OrgCompany.created_at",
+        "retail_erp_demo:OrgStore.created_at"
+      ]
+    },
+    "sourceKey": "retail_erp_demo",
+    "mdlDigest": "4d67a33dc92aa7a68d816a2791d925916c6b3c2b46639e864e95831bf340efe9",
+    "retrievalStrategy": "full",
+    "sql": "WITH company_ranked AS (SELECT id AS company_pk, code AS company_code, name AS company_name, legal_person AS company_legal_person, tax_number AS company_tax_number, status AS company_status, created_at AS company_created_at, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM OrgCompany), store_ranked AS (SELECT id AS store_pk, company_id AS store_company_id, region_id AS store_region_id, code AS store_code, name AS store_name, level AS store_level, address AS store_address, contact_phone AS store_contact_phone, business_hours AS store_business_hours, status AS store_status, created_at AS store_created_at, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM OrgStore) SELECT 'OrgCompany' AS source_model, c.company_pk AS id, c.company_code AS code, c.company_name AS name, c.company_legal_person AS legal_person, c.company_tax_number AS tax_number, NULL AS company_id, NULL AS region_id, NULL AS level, NULL AS address, NULL AS contact_phone, NULL AS business_hours, c.company_status AS status, c.company_created_at AS created_at FROM company_ranked AS c WHERE c.rn <= 20 UNION ALL SELECT 'OrgStore' AS source_model, s.store_pk AS id, s.store_code AS code, s.store_name AS name, NULL AS legal_person, NULL AS tax_number, s.store_company_id AS company_id, s.store_region_id AS region_id, s.store_level AS level, s.store_address AS address, s.store_contact_phone AS contact_phone, s.store_business_hours AS business_hours, s.store_status AS status, s.store_created_at AS created_at FROM store_ranked AS s WHERE s.rn <= 20 ORDER BY source_model, id"
+  },
+  "requestId": "161b00d53ac34f0f86f5f66dc888c7a8"
+}

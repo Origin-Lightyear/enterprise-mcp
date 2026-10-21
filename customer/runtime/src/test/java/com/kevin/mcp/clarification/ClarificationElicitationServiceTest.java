@@ -73,10 +73,12 @@ class ClarificationElicitationServiceTest {
     }
 
     private ClarificationRequest request() {
-        return new ClarificationRequest("clarification-1", "销售日期是指哪个字段？",
+        return new com.kevin.mcp.clarification.ClarificationRequest("clarification-1", "销售日期是指哪个字段？",
                 "MULTIPLE_SEMANTIC_FIELDS", List.of(
                 new ClarificationRequest.ClarificationOption("Order.createdAt", "下单时间"),
                 new ClarificationRequest.ClarificationOption("Order.paidAt", "支付时间")
         ), true, "sales", "mdl-digest");
     }
 }
+
+

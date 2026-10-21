@@ -101,3 +101,4 @@ public class ClarificationElicitationService {
     public record ClarificationAnswer(String optionId, String answer) {
     }
 }
+
