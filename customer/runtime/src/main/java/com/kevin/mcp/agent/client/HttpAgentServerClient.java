@@ -1,9 +1,13 @@
 package com.kevin.mcp.agent.client;
 
 import com.kevin.mcp.agent.model.EmployeeAuth;
+import com.kevin.mcp.agent.model.ApiCredential;
+import com.kevin.mcp.agent.configuration.RuntimeIdentityProperties;
 import com.kevin.mcp.agent.model.EmployeeLlmInvocationConfig;
 import com.kevin.mcp.agent.model.TenantConfig;
+import com.kevin.mcp.agent.service.ApiCredentialDeliveryService;
 import com.kevin.mcp.llm.LlmModelSelection;
+import com.kevin.mcp.security.TenantMcpAuthentication;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -13,6 +17,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 通过 HTTP 调用 Platform 与 Tenant 后端，拉取租户、员工鉴权并上报审计结果。
@@ -25,6 +30,12 @@ public class HttpAgentServerClient {
     private final RestClient saasRestClient;
     private final RestClient tenantRestClient;
     private final JdkClientHttpRequestFactory requestFactory;
+    /** 当前 Runtime 向 Tenant 发起内部请求时使用的实例 Token。 */
+    private final String runtimeToken;
+    /** 当前 Runtime 的稳定实例编号。 */
+    private final String instanceId;
+    /** 使用一次性请求编号接收 Tenant 反向凭证投递的服务。 */
+    private final ApiCredentialDeliveryService credentialDeliveryService;
 
     /**
      * 使用 Platform 和 Tenant 服务地址初始化 HTTP 客户端。
@@ -33,12 +44,18 @@ public class HttpAgentServerClient {
      * @param tenantServerUrl Tenant 后端地址
      * @param connectTimeout 连接超时
      * @param readTimeout 读取超时
+     * @param authentication Tenant MCP 通信认证模块
+     * @param runtimeIdentityProperties Runtime 身份配置
+     * @param credentialDeliveryService API 凭证反向投递服务
      */
     public HttpAgentServerClient(
             @Value("${saas.saas-server}") String saasServerUrl,
             @Value("${saas.tenant-server}") String tenantServerUrl,
             @Value("${saas.http.connect-timeout:3s}") Duration connectTimeout,
-            @Value("${saas.http.read-timeout:10s}") Duration readTimeout
+            @Value("${saas.http.read-timeout:10s}") Duration readTimeout,
+            TenantMcpAuthentication authentication,
+            RuntimeIdentityProperties runtimeIdentityProperties,
+            ApiCredentialDeliveryService credentialDeliveryService
     ) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
@@ -57,6 +74,9 @@ public class HttpAgentServerClient {
                 .defaultHeader("Accept", "application/json")
                 .defaultHeader("Content-Type", "application/json")
                 .build();
+        this.runtimeToken = authentication.runtimeToken();
+        this.instanceId = runtimeIdentityProperties.getInstanceId();
+        this.credentialDeliveryService = credentialDeliveryService;
     }
 
     /**
@@ -93,6 +113,25 @@ public class HttpAgentServerClient {
                         .build())
                 .retrieve()
                 .body(EmployeeAuth.class);
+    }
+
+    /**
+     * 按当前 Runtime、员工和 API 数据源从 Tenant 解析来源系统身份凭证。
+     *
+     * @param tenantId 已验证租户编号
+     * @param employeeId 已验证员工编号
+     * @param apiSourceId API 数据源稳定标识
+     * @return 当前员工 API 身份凭证
+     */
+    public ApiCredential fetchApiCredential(String tenantId, Long employeeId, String apiSourceId) {
+        String requestId = UUID.randomUUID().toString();
+        return credentialDeliveryService.request(requestId, () -> this.tenantRestClient.post()
+                .uri("/api/v1/runtime/inner/api-credential")
+                .header(TenantMcpAuthentication.TOKEN_HEADER, runtimeToken)
+                .body(Map.of("requestId", requestId, "tenantId", Long.valueOf(tenantId),
+                        "instanceId", instanceId, "employeeId", employeeId, "apiSourceId", apiSourceId))
+                .retrieve()
+                .toBodilessEntity());
     }
 
     /**

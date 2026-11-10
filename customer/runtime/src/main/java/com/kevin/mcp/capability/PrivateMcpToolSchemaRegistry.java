@@ -405,7 +405,7 @@ public class PrivateMcpToolSchemaRegistry implements SmartInitializingSingleton 
 
     /**
      * 承载省略空值后的规划阶段 Schema 节点。
-     * 独立于完整注册 Schema，避免 token 优化破坏权限审查阶段依赖的非空集合约定。
+     * 独立于完整注册 Schema，避免 token 优化破坏规划阶段依赖的非空集合约定。
      *
      * @param type JSON Schema 类型
      * @param description 节点描述

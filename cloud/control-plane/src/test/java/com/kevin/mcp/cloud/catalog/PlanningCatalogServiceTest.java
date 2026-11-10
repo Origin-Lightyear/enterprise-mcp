@@ -19,6 +19,35 @@ class PlanningCatalogServiceTest {
     private final InMemoryPlanningCatalogRepository repository = new InMemoryPlanningCatalogRepository();
     private final PlanningCatalogService service = new PlanningCatalogService(repository);
 
+    /** 验证删除最后一个能力后，空目录仍可确认并成为 Runtime 当前引用。 */
+    @Test
+    void shouldConfirmAndReferenceEmptyCatalog() {
+        String json = "{\"capabilities\":[]}";
+        String digest = CatalogSnapshotCodec.digest(json);
+
+        assertThat(service.confirm(candidate(digest, json)).catalogDigest()).isEqualTo(digest);
+        service.reference(new RuntimeCatalogReference(
+                "tenant-1", "instance-1", "1.0.0", "sha256:artifact", digest));
+
+        assertThat(service.find("tenant-1", digest)).get()
+                .extracting(PlanningCatalog::catalogJson).isEqualTo(json);
+        assertThat(service.findRegistration("tenant-1", "instance-1", "sha256:artifact", digest)).isPresent();
+    }
+
+    /** 验证允许空能力列表不会放过摘要、身份、格式或单项能力校验。 */
+    @Test
+    void shouldStillRejectInvalidEmptyCatalogAndMalformedCapabilities() {
+        assertThatThrownBy(() -> service.confirm(candidate("sha256:invalid", "{\"capabilities\":[]}")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("does not match");
+        assertThatThrownBy(() -> service.confirm(new CatalogCandidate(
+                "", "instance-1", "1.0.0", "sha256:artifact", "digest", "{\"capabilities\":[]}")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("identity");
+        for (String json : new String[]{"{}", "{\"capabilities\":null}", "{\"capabilities\":[{}]}"}) {
+            assertThatThrownBy(() -> service.confirm(candidate(CatalogSnapshotCodec.digest(json), json)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     /** 验证 Runtime 声明的摘要不匹配 canonical Catalog 时拒绝确认。 */
     @Test
     void shouldRejectDeclaredDigestMismatch() {

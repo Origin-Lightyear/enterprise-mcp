@@ -10,7 +10,3 @@ export function resolveImportDatasource(datasources: Datasource[], modeling: Mod
     || datasources.find((item) => item.active)
     || datasources[0];
 }
-
-export function datasourceCanBeDeleted(datasource: Datasource): boolean {
-  return !datasource.modelingInUse && !datasource.currentInUse;
-}

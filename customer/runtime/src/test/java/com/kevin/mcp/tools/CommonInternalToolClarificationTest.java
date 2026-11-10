@@ -11,8 +11,6 @@ import com.kevin.mcp.agent.model.EmployeeAuth;
 import com.kevin.mcp.audit.ExecutionAuditService;
 import com.kevin.mcp.audit.PermissionAuditOutboxService;
 import com.kevin.mcp.authorization.LocalAuthorizationService;
-import com.kevin.mcp.authorization.PermissionReviewResult;
-import com.kevin.mcp.authorization.PermissionReviewService;
 import com.kevin.mcp.authorization.PlanBindingValidator;
 import com.kevin.mcp.annotation.BatchMode;
 import com.kevin.mcp.annotation.ExecutorType;
@@ -76,7 +74,6 @@ class CommonInternalToolClarificationTest {
         PlanningService planningService = mock(PlanningService.class);
         JsonPlanParser parser = mock(JsonPlanParser.class);
         JsonPlanExecutor executor = mock(JsonPlanExecutor.class);
-        PermissionReviewService reviewService = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         LocalAuthorizationService authorizationService = mock(LocalAuthorizationService.class);
         PlanBindingValidator bindingValidator = mock(PlanBindingValidator.class);
@@ -106,10 +103,6 @@ class CommonInternalToolClarificationTest {
         when(planningService.plan(anyString(), anyString(), anyLong())).thenReturn("raw-1", "raw-2");
         when(parser.parse("raw-1")).thenReturn(firstPlan);
         when(parser.parse("raw-2")).thenReturn(secondPlan);
-        when(reviewService.requiresReview(Map.of())).thenReturn(false);
-        when(reviewService.review(anyString(), any(), any(), any(), any())).thenReturn(PermissionReviewResult.allow());
-        when(reviewService.reviewVersion()).thenReturn("review-v1");
-        when(reviewService.maskFinalResult(any(), any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(auditOutbox.enqueue(any())).thenReturn("audit-1");
         when(modelProvider.getIfAvailable()).thenReturn(snapshotProvider);
         when(snapshotProvider.snapshot()).thenReturn(new SemanticModelSnapshot("mdl-digest", Map.of("sources", Map.of())));
@@ -120,7 +113,7 @@ class CommonInternalToolClarificationTest {
         doNothing().when(runtimeCatalog).requireExecutable(any());
 
         CommonInternalTool tool = new CommonInternalTool(agentVerify, planningService, parser, executor,
-                reviewService, agentClient, authorizationService, bindingValidator, auditService, auditOutbox,
+                agentClient, authorizationService, bindingValidator, auditService, auditOutbox,
                 new RequestExecutionContextHolder(), schemaRegistry, modelProvider, runtimeCatalog,
                 elicitationService, debugIdentityProvider);
 
@@ -143,7 +136,6 @@ class CommonInternalToolClarificationTest {
         PlanningService planningService = mock(PlanningService.class);
         JsonPlanParser parser = mock(JsonPlanParser.class);
         JsonPlanExecutor executor = mock(JsonPlanExecutor.class);
-        PermissionReviewService reviewService = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         LocalAuthorizationService authorizationService = mock(LocalAuthorizationService.class);
         PlanBindingValidator bindingValidator = mock(PlanBindingValidator.class);
@@ -168,9 +160,6 @@ class CommonInternalToolClarificationTest {
         when(agentVerify.verifySourceAndGetEmployee(requestContext)).thenReturn(employee);
         when(planningService.plan(anyString(), anyString(), anyLong())).thenReturn("raw-1");
         when(parser.parse("raw-1")).thenReturn(plan("plan-1"));
-        when(reviewService.requiresReview(Map.of())).thenReturn(false);
-        when(reviewService.review(anyString(), any(), any(), any(), any())).thenReturn(PermissionReviewResult.allow());
-        when(reviewService.reviewVersion()).thenReturn("review-v1");
         when(auditOutbox.enqueue(any())).thenReturn("audit-1");
         when(modelProvider.getIfAvailable()).thenReturn(snapshotProvider);
         when(snapshotProvider.snapshot()).thenReturn(
@@ -180,7 +169,7 @@ class CommonInternalToolClarificationTest {
         when(elicitationService.elicit(requestContext, clarification)).thenReturn(resolution);
 
         CommonInternalTool tool = new CommonInternalTool(agentVerify, planningService, parser, executor,
-                reviewService, agentClient, authorizationService, bindingValidator, auditService, auditOutbox,
+                agentClient, authorizationService, bindingValidator, auditService, auditOutbox,
                 new RequestExecutionContextHolder(), schemaRegistry, modelProvider, runtimeCatalog,
                 elicitationService, debugIdentityProvider);
 
@@ -191,14 +180,13 @@ class CommonInternalToolClarificationTest {
         verify(auditService).recordClarification("tenant-1", 1001L, clarification, resolution);
     }
 
-    /** 验证调试总开关复用真实员工后跳过来源校验、权限审查、脱敏和审计，同时保留本地授权与目录绑定。 */
+    /** 验证调试总开关复用真实员工后跳过来源校验和审计，同时保留确定性授权与目录绑定。 */
     @Test
     void shouldBypassReviewAndAuditWhileDebugEnabled() throws Exception {
         AgentVerify agentVerify = mock(AgentVerify.class);
         PlanningService planningService = mock(PlanningService.class);
         JsonPlanParser parser = mock(JsonPlanParser.class);
         JsonPlanExecutor executor = mock(JsonPlanExecutor.class);
-        PermissionReviewService reviewService = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         ExecutionAuditService auditService = mock(ExecutionAuditService.class);
         PermissionAuditOutboxService auditOutbox = mock(PermissionAuditOutboxService.class);
@@ -252,15 +240,10 @@ class CommonInternalToolClarificationTest {
         when(planningService.plan("查询员工", "tenant-1", 1001L)).thenReturn("raw-debug");
         when(parser.parse("raw-debug")).thenReturn(executionPlan);
         when(executor.execute(org.mockito.ArgumentMatchers.eq(executionPlan), any())).thenReturn(executionResult);
-        when(reviewService.maskFinalResult(any(), any()))
-                .thenThrow(new AssertionError("debug bypass must not mask the final result"));
-        when(reviewService.requiresReview(Map.of())).thenReturn(false);
-        when(reviewService.review(anyString(), any(), any(), any(), any())).thenReturn(PermissionReviewResult.allow());
-        when(reviewService.reviewVersion()).thenReturn("review-v1");
         when(auditOutbox.enqueue(any())).thenReturn("audit-1");
 
         CommonInternalTool tool = new CommonInternalTool(agentVerify, planningService, parser, executor,
-                reviewService, agentClient, new LocalAuthorizationService(schemaRegistry),
+                agentClient, new LocalAuthorizationService(schemaRegistry),
                 new PlanBindingValidator(runtimeCatalog), auditService, auditOutbox,
                 new RequestExecutionContextHolder(), schemaRegistry, modelProvider(), runtimeCatalog,
                 elicitationService, debugIdentityProvider);
@@ -271,8 +254,6 @@ class CommonInternalToolClarificationTest {
                 .contains("13800000000")
                 .doesNotContain("****");
         verifyNoInteractions(agentVerify, auditService, auditOutbox);
-        verify(reviewService, never()).review(anyString(), any(), any(), any(), any());
-        verify(reviewService, never()).maskFinalResult(any(), any());
         verify(agentClient).fetchTenantAuth("tenant-1", 1001L);
 
     }
@@ -289,7 +270,6 @@ class CommonInternalToolClarificationTest {
         PlanningService planningService = mock(PlanningService.class);
         JsonPlanParser parser = mock(JsonPlanParser.class);
         JsonPlanExecutor executor = mock(JsonPlanExecutor.class);
-        PermissionReviewService reviewService = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         ExecutionAuditService auditService = mock(ExecutionAuditService.class);
         PermissionAuditOutboxService auditOutbox = mock(PermissionAuditOutboxService.class);
@@ -302,7 +282,7 @@ class CommonInternalToolClarificationTest {
                 .thenThrow(new K3BusinessException("分页取数需要排序条件或者单据有设置主键 | 建议: 传 order"));
 
         CommonInternalTool tool = new CommonInternalTool(agentVerify, planningService, parser, executor,
-                reviewService, agentClient, new LocalAuthorizationService(mock(PrivateMcpToolSchemaRegistry.class)),
+                agentClient, new LocalAuthorizationService(mock(PrivateMcpToolSchemaRegistry.class)),
                 new PlanBindingValidator(mock(RuntimeCatalog.class)), auditService, auditOutbox,
                 new RequestExecutionContextHolder(), mock(PrivateMcpToolSchemaRegistry.class), modelProvider(), mock(RuntimeCatalog.class),
                 elicitationService, mock(DebugIdentityProvider.class));

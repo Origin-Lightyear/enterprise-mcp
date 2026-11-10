@@ -4,7 +4,8 @@
 
 ## 构建并导出发布包
 
-`container.env` 只填写该租户/实例与其他租户不同的配置：租户 ID、实例 ID、对外端口和升级 token。
+`container.env` 只填写该租户/实例与其他租户不同的配置：租户 ID、实例 ID、对外端口和
+`TENANT_MCP_TOKEN`（当前实例通信 Token）。Token 生成方式见 `deploy/security/README.md`。
 公共服务地址、Wren 内部路径、超时和版本不放在这里。版本直接读取
 `application.yml` 的 `enterprise.runtime.artifact-version` 默认值，镜像构建后由镜像自身携带。
 构建脚本不再重复接收版本和身份参数，也不接收 Platform 内部的 `platformMcpId`。

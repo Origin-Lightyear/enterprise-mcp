@@ -1,4 +1,4 @@
-package com.customer.mcp.tool.internalmcp;
+package com.customer.mcp.tool.publicmcp;
 
 import com.kevin.mcp.tools.CommonInternalTool;
 import org.springframework.ai.mcp.annotation.McpTool;

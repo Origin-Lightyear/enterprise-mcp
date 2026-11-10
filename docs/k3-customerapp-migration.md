@@ -8,7 +8,7 @@ Runtime 遇到不确定的 FormId、报表账簿或期间，通过 MCP Elicitati
 
 ## 当前配置
 
-默认关闭。启用需在客户 Runtime 环境配置 `ENTERPRISE_MCP_K3_ENABLED=true`、`ENTERPRISE_MCP_K3_SERVER_URL`、`ENTERPRISE_MCP_K3_ACCT_ID`、`ENTERPRISE_MCP_K3_USERNAME`。应用密钥模式还需 `ENTERPRISE_MCP_K3_APP_ID`、`ENTERPRISE_MCP_K3_APP_SECRET`；密码模式需 `ENTERPRISE_MCP_K3_AUTH_MODE=password`、`ENTERPRISE_MCP_K3_PASSWORD`。可配置 `ENTERPRISE_MCP_K3_KNOWLEDGE_DIR` 与 `ENTERPRISE_MCP_K3_METADATA_CACHE_DIR`。启用后须完成 Runtime Catalog 注册及 Control Plane 的 V2 Flyway 迁移，才能发布知识摘要并规划。
+默认关闭。启用需在客户 Runtime 环境配置 `ENTERPRISE_MCP_K3_ENABLED=true`、`ENTERPRISE_MCP_K3_SERVER_URL`、`ENTERPRISE_MCP_K3_ACCT_ID`、`ENTERPRISE_MCP_K3_APP_ID` 和 `ENTERPRISE_MCP_K3_APP_SECRET`。应用编号和应用密钥属于数据源级连接配置；每名员工在金蝶中的用户名作为唯一标识由 Tenant 加密保存并按请求提供。可配置 `ENTERPRISE_MCP_K3_KNOWLEDGE_DIR` 与 `ENTERPRISE_MCP_K3_METADATA_CACHE_DIR`。启用后须完成 Runtime Catalog 注册及 Control Plane 的 V2 Flyway 迁移，才能发布知识摘要并规划。
 
 知识存于客户本地 `data/k3/learned`，文件名由服务器地址和账套 ID 摘要生成；运维备份、清理和迁移须按账套隔离。知识不是权限授予，也不应含业务行或凭证。变更金蝶账套/凭证后应重新验证元数据与业务语义。
 

@@ -118,11 +118,14 @@ public class RuntimeCatalogService implements RuntimeCatalog {
             String actualMdlDigest = currentMdl.map(SemanticModelSnapshot::digest).orElse("");
             PreparedMdl prepared;
             try {
-                prepared = adapter.prepare(command.profileName());
+                prepared = command.deleteDatasource()
+                        ? adapter.prepareDeletion(command.profileName()) : adapter.prepare(command.profileName());
             } catch (RuntimeException exception) {
                 throw new CatalogException(Code.VALIDATION_FAILED, "Candidate MDL validation failed", exception);
             }
-            String operationDigest = prepared.snapshot().digest();
+            String operationDigest = command.deleteDatasource()
+                    ? "delete:" + command.profileName() + ":" + prepared.snapshot().digest()
+                    : prepared.snapshot().digest();
             OperationRecord existing = operations.get(command.idempotencyKey());
             if (existing != null) {
                 adapter.discard(prepared.candidateToken());
@@ -139,9 +142,14 @@ public class RuntimeCatalogService implements RuntimeCatalog {
 
             boolean committed = false;
             try {
-                CurrentCatalogSnapshot candidate = buildSnapshot(Optional.of(prepared.snapshot()));
+                Optional<SemanticModelSnapshot> candidateMdl = prepared.snapshot().digest().isBlank()
+                                && prepared.snapshot().manifest().isEmpty()
+                                ? Optional.empty() : Optional.of(prepared.snapshot());
+                CurrentCatalogSnapshot candidate = buildSnapshot(candidateMdl,
+                        candidateMdl.isPresent() ? datasourceDisplayNames(adapter) : Map.of());
                 confirm(candidate);
-                if (actualMdlDigest.equals(prepared.snapshot().digest())) {
+                // 未生效数据源的删除仍须提交连接和草稿，不能按 MDL 摘要相同跳过。
+                if (!command.deleteDatasource() && actualMdlDigest.equals(prepared.snapshot().digest())) {
                     reference(candidate);
                     publishReady(candidate);
                     MdlUpdateResult result = result(candidate, false);
@@ -216,12 +224,22 @@ public class RuntimeCatalogService implements RuntimeCatalog {
             if (restorePending) {
                 throw new CatalogException(Code.NOT_READY, "Wren backup restore is in progress");
             }
-            Optional<SemanticModelSnapshot> currentMdl = Optional.empty();
-            CurrentMdlAdapter adapter = currentMdlAdapterProvider.getIfAvailable();
-            if (adapter != null) {
-                currentMdl = adapter.current();
+            CurrentCatalogSnapshot snapshot;
+            try {
+                Optional<SemanticModelSnapshot> currentMdl = Optional.empty();
+                CurrentMdlAdapter adapter = currentMdlAdapterProvider.getIfAvailable();
+                if (adapter != null) {
+                    currentMdl = adapter.current();
+                }
+                snapshot = buildSnapshot(currentMdl,
+                        currentMdl.isPresent() ? datasourceDisplayNames(adapter) : Map.of());
+            } catch (CatalogException exception) {
+                markNotReady(exception.code().name());
+                throw exception;
+            } catch (RuntimeException exception) {
+                markNotReady(Code.NOT_READY.name());
+                throw new CatalogException(Code.NOT_READY, "Wren Current Catalog metadata is unavailable", exception);
             }
-            CurrentCatalogSnapshot snapshot = buildSnapshot(currentMdl);
             try {
                 confirm(snapshot);
                 reference(snapshot);
@@ -257,7 +275,8 @@ public class RuntimeCatalogService implements RuntimeCatalog {
         }
     }
 
-    private CurrentCatalogSnapshot buildSnapshot(Optional<SemanticModelSnapshot> currentMdl) {
+    private CurrentCatalogSnapshot buildSnapshot(Optional<SemanticModelSnapshot> currentMdl,
+                                                 Map<String, String> datasourceDisplayNames) {
         List<PrivateMcpToolSchemaRegistry.CloudPlanningSchema> capabilities = new ArrayList<>();
         for (PrivateMcpToolSchemaRegistry.CloudPlanningSchema capability : schemaRegistry.getCloudPlanningSchemas()) {
             if (currentMdl.isPresent() || !WREN_CAPABILITY_ID.equals(capability.capabilityId())) {
@@ -276,9 +295,39 @@ public class RuntimeCatalogService implements RuntimeCatalog {
             mdlDigest = mdl.digest();
             catalog.put("mdlDigest", mdl.digest());
             catalog.put("semanticModel", mdl.manifest());
+            catalog.put("semanticSourceDisplayNames", semanticSourceDisplayNames(mdl, datasourceDisplayNames));
         }
         String catalogJson = CatalogSnapshotCodec.encode(catalog);
         return new CurrentCatalogSnapshot(catalogJson, CatalogSnapshotCodec.digest(catalogJson), mdlDigest);
+    }
+
+    private Map<String, String> datasourceDisplayNames(CurrentMdlAdapter adapter) {
+        if (adapter == null) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> displayNames = adapter.datasourceDisplayNames();
+            return displayNames == null ? Map.of() : displayNames;
+        } catch (RuntimeException exception) {
+            throw new CatalogException(Code.NOT_READY, "Wren datasource display metadata is unavailable", exception);
+        }
+    }
+
+    private Map<String, String> semanticSourceDisplayNames(SemanticModelSnapshot mdl,
+                                                            Map<String, String> datasourceDisplayNames) {
+        Object rawSources = mdl.manifest().get("sources");
+        if (!(rawSources instanceof Map<?, ?> sources)) {
+            throw new CatalogException(Code.VALIDATION_FAILED, "Current MDL sources are invalid");
+        }
+        if (sources.keySet().stream().anyMatch(sourceKey -> !(sourceKey instanceof String))) {
+            throw new CatalogException(Code.VALIDATION_FAILED, "Current MDL source keys are invalid");
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        sources.keySet().stream().map(String.class::cast).sorted().forEach(sourceKey -> {
+            String displayName = datasourceDisplayNames.get(sourceKey);
+            result.put(sourceKey, displayName == null || displayName.isBlank() ? sourceKey : displayName);
+        });
+        return Map.copyOf(result);
     }
 
     private void confirm(CurrentCatalogSnapshot snapshot) {
@@ -288,9 +337,15 @@ public class RuntimeCatalogService implements RuntimeCatalog {
         Map<?, ?> confirmation;
         try {
             confirmation = gatewayClient.confirmCatalog(request);
+        } catch (PlanningGatewayClient.CatalogRequestException exception) {
+            log.warn("Control Plane rejected Catalog confirmation: tenantId={}, instanceId={}, catalogDigest={}, reason={}",
+                    identityProperties.getTenantId(), identityProperties.getInstanceId(), snapshot.catalogDigest(),
+                    exception.getMessage());
+            throw new CatalogException(exception.statusCode() >= 400 && exception.statusCode() < 500
+                    ? Code.VALIDATION_FAILED : Code.CONTROL_PLANE_UNAVAILABLE, exception.getMessage(), exception);
         } catch (RuntimeException exception) {
             throw new CatalogException(Code.CONTROL_PLANE_UNAVAILABLE,
-                    "Control Plane did not confirm the Catalog Snapshot", exception);
+                    "Control Plane did not confirm the Catalog Snapshot: connection or client failure", exception);
         }
         if (!snapshot.catalogDigest().equals(String.valueOf(confirmation.get("catalogDigest")))) {
             throw new CatalogException(Code.DIGEST_MISMATCH,
@@ -303,6 +358,9 @@ public class RuntimeCatalogService implements RuntimeCatalog {
         request.put("catalogDigest", snapshot.catalogDigest());
         try {
             gatewayClient.referenceCatalog(request);
+        } catch (PlanningGatewayClient.CatalogRequestException exception) {
+            throw new CatalogException(Code.CONTROL_PLANE_UNAVAILABLE,
+                    "Control Plane did not save the Runtime Catalog reference: " + exception.getMessage(), exception);
         } catch (RuntimeException exception) {
             throw new CatalogException(Code.CONTROL_PLANE_UNAVAILABLE,
                     "Control Plane did not save the Runtime Catalog reference", exception);
@@ -332,6 +390,13 @@ public class RuntimeCatalogService implements RuntimeCatalog {
         currentSnapshot.set(snapshot);
         state.set(new CatalogState(PlanningReadinessStatus.NOT_READY, snapshot.catalogDigest(), snapshot.mdlDigest(),
                 reasonCode, Instant.now()));
+    }
+
+    private void markNotReady(String reasonCode) {
+        CatalogState previous = state.get();
+        currentSnapshot.set(null);
+        state.set(new CatalogState(PlanningReadinessStatus.NOT_READY,
+                previous.catalogDigest(), previous.mdlDigest(), reasonCode, Instant.now()));
     }
 
     private PlanningBinding binding(CurrentCatalogSnapshot snapshot) {

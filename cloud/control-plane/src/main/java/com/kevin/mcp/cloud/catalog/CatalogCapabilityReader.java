@@ -30,9 +30,7 @@ final class CatalogCapabilityReader {
             throw new IllegalArgumentException("Planning Catalog JSON is invalid", exception);
         }
         JsonArray capabilities = capabilityArray(root);
-        if (capabilities.isEmpty()) {
-            throw new IllegalArgumentException("Planning Catalog capabilities are empty");
-        }
+        // 删除最后一个已配置能力后，空列表仍是可确认、可引用的有效快照。
         Map<String, Integer> versions = new LinkedHashMap<>();
         for (JsonElement capabilityElement : capabilities) {
             if (!capabilityElement.isJsonObject()) {

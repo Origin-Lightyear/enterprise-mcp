@@ -12,7 +12,6 @@ import com.kevin.mcp.annotation.ExecutorType;
 import com.kevin.mcp.annotation.OperationMode;
 import com.kevin.mcp.annotation.PublicMcpTool;
 import com.kevin.mcp.authorization.LocalAuthorizationService;
-import com.kevin.mcp.authorization.PermissionReviewService;
 import com.kevin.mcp.capability.LocalCapabilityDescriptor;
 import com.kevin.mcp.capability.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.execution.RequestExecutionContextHolder;
@@ -46,7 +45,6 @@ class PublicMcpToolSecurityAspectDebugTest {
     void shouldKeepRateLimitAndIdentityWhileBypassingReviewAndAudit() throws Throwable {
         AgentVerify agentVerify = mock(AgentVerify.class);
         PrivateMcpToolSchemaRegistry registry = mock(PrivateMcpToolSchemaRegistry.class);
-        PermissionReviewService permissionReview = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         ExecutionAuditService audit = mock(ExecutionAuditService.class);
         DebugBypassProperties properties = new DebugBypassProperties();
@@ -61,7 +59,7 @@ class PublicMcpToolSecurityAspectDebugTest {
                 ExecutorType.JAVA, BatchMode.SINGLE, "METADATA")));
         PublicMcpToolSecurityAspect aspect = new PublicMcpToolSecurityAspect(
                 agentVerify, debugIdentityProvider,
-                new ToolSecurityPipeline(new LocalAuthorizationService(registry), permissionReview,
+                new ToolSecurityPipeline(new LocalAuthorizationService(registry),
                         new RequestExecutionContextHolder()), agentClient, audit);
 
         ProceedingJoinPoint invocation = mock(ProceedingJoinPoint.class);
@@ -74,7 +72,7 @@ class PublicMcpToolSecurityAspectDebugTest {
         assertThat(result).isEqualTo(Map.of("outcome", "OK"));
         verify(agentClient).fetchTenantAuth("tenant-1", 1001L);
         verify(invocation).proceed();
-        verifyNoInteractions(agentVerify, permissionReview, audit);
+        verifyNoInteractions(agentVerify, audit);
     }
 
     /** 调试模式限流仍生效，但拒绝调用不写审计。 */
@@ -82,7 +80,6 @@ class PublicMcpToolSecurityAspectDebugTest {
     void shouldStillRateLimitWithoutAuditWhenDebugEnabled() throws Throwable {
         AgentVerify agentVerify = mock(AgentVerify.class);
         PrivateMcpToolSchemaRegistry registry = mock(PrivateMcpToolSchemaRegistry.class);
-        PermissionReviewService permissionReview = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         ExecutionAuditService audit = mock(ExecutionAuditService.class);
         DebugBypassProperties properties = new DebugBypassProperties();
@@ -97,7 +94,7 @@ class PublicMcpToolSecurityAspectDebugTest {
                 ExecutorType.JAVA, BatchMode.SINGLE, "METADATA")));
         PublicMcpToolSecurityAspect aspect = new PublicMcpToolSecurityAspect(
                 agentVerify, debugIdentityProvider,
-                new ToolSecurityPipeline(new LocalAuthorizationService(registry), permissionReview,
+                new ToolSecurityPipeline(new LocalAuthorizationService(registry),
                         new RequestExecutionContextHolder()), agentClient, audit);
 
         Object last = null;
@@ -115,12 +112,11 @@ class PublicMcpToolSecurityAspectDebugTest {
                 eq("k3.metadata"), any(), any(), any());
     }
 
-    /** 相同参数短 TTL 内复用审查结果，不重复调用权限模型。 */
+    /** 正常模式连续调用只执行确定性授权，不存在权限模型审查。 */
     @Test
-    void shouldReuseCachedReviewForRepeatedArguments() throws Throwable {
+    void shouldExecuteRepeatedArgumentsWithoutPermissionModelReview() throws Throwable {
         AgentVerify agentVerify = mock(AgentVerify.class);
         PrivateMcpToolSchemaRegistry registry = mock(PrivateMcpToolSchemaRegistry.class);
-        PermissionReviewService permissionReview = mock(PermissionReviewService.class);
         HttpAgentServerClient agentClient = mock(HttpAgentServerClient.class);
         ExecutionAuditService audit = mock(ExecutionAuditService.class);
         DebugBypassProperties properties = new DebugBypassProperties();
@@ -133,12 +129,10 @@ class PublicMcpToolSecurityAspectDebugTest {
                 ExecutorType.JAVA, BatchMode.SINGLE, "METADATA")));
         PublicMcpToolSecurityAspect aspect = new PublicMcpToolSecurityAspect(
                 agentVerify, debugIdentityProvider,
-                new ToolSecurityPipeline(new LocalAuthorizationService(registry), permissionReview,
+                new ToolSecurityPipeline(new LocalAuthorizationService(registry),
                         new RequestExecutionContextHolder()), agentClient, audit);
         when(agentVerify.verifySourceAndGetEmployee(any())).thenReturn(new VerifiedEmployee("tenant-1",
                 new EmployeeAuth(1001L, "ENABLED", 7L, Map.of(), Map.of())));
-        when(permissionReview.review(any(), any(), any(), any(), any())).thenReturn(
-                com.kevin.mcp.authorization.PermissionReviewResult.allow());
 
         ProceedingJoinPoint first = mock(ProceedingJoinPoint.class);
         when(first.getArgs()).thenReturn(new Object[]{mock(McpSyncRequestContext.class)});
@@ -151,8 +145,8 @@ class PublicMcpToolSecurityAspectDebugTest {
 
         assertThat(firstResult).isEqualTo(Map.of("outcome", "OK"));
         assertThat(secondResult).isEqualTo(Map.of("outcome", "OK"));
-        verify(permissionReview,
-                org.mockito.Mockito.times(1)).review(any(), any(), any(), any(), any());
+        verify(audit, org.mockito.Mockito.times(2)).recordPublicToolCall(
+                eq("tenant-1"), eq(1001L), eq("k3.metadata"), eq("allow"), any(), eq("SUCCEEDED"));
     }
 
     /** 构造最小公开能力声明。 */

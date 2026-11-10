@@ -136,7 +136,7 @@ public class TenantCacheService {
     }
 
     /**
-     * 读取员工鉴权快照，供权限审查复用已刷新的有效规则。
+     * 读取员工鉴权快照，供数据源授权复用已刷新的有效权限。
      *
      * @param tenantId 租户标识
      * @param employeeId 员工编号

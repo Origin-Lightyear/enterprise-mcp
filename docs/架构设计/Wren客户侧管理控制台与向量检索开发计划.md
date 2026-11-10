@@ -57,6 +57,16 @@ Wren 只负责客户内网数据库的语义建模、只读 SQL 生成和查询�
 
 ## 5. 并发与查询
 
+### 数据源删除
+
+管理员在数据源列表点击“删除”并确认后，删除连接配置、建模草稿和该源的 Current MDL；真实数据库的表与数据不变。删除请求使用 `DELETE /internal/wren/admin/datasources/{name}`，携带 `expectedMdlDigest`、`idempotencyKey`，并沿用管理 Session 和 CSRF 校验。
+
+删除复用 MDL Update：先固化移除该源后的完整候选，再经 Control Plane 确认 Catalog，最后在查询锁内移除本地配置与模型。确认失败时不提交；提交时重新校验 MDL 摘要、草稿 revision、连接配置及探测任务状态，本地持久化异常恢复原连接、草稿与 Current 目录。正在探测的数据源不能删除。自动生成且未被其他连接引用的密码变量随连接清理，共享凭据保留。
+
+最后一个生效源删除后 Current MDL 为空，Catalog 撤下 Wren 查询能力，其他 Java 能力保持。提交后云端引用失败进入 `NOT_READY` 并由现有同步机制恢复；页面刷新当前状态后可重新发起操作。删除通过短期本地日志记录文件恢复信息，进程中止后启动时恢复未完成删除、清理已提交删除；建议操作前仍通过列表中的“备份下载”保留恢复材料。
+
+顶部 Modeling 导航始终退出连接编辑、选表和关系向导，返回现有模型画布；不因历史 `setupCompleted=false` 自动重新进入向导。新建或保存连接仍进入结构探测，探测确认选表后显式进入关系配置。
+
 - Modeling 编辑使用单调 `revision` 乐观锁，旧 revision 返回 `409 MODELING_CHANGED`。
 - MDL Update 使用 `expectedMdlDigest` 防止基于过期 Current 提交。
 - 同一 Runtime 的 MDL Update 串行执行；幂等键不能绑定不同候选内容。
@@ -118,7 +128,7 @@ POST /control-plane/planning/plans
   audit/
 ```
 
-Adapter 启动时删除遗留 Candidate，只从 `projects/current/` 重建 Engine。旧 `draft/`、`drafts/`、`releases/` 和 `active.json` 不再读取或迁移，部署前应由运维备份后清理。
+Adapter 启动时先依据删除日志恢复未提交的本地删除，再清理遗留 Candidate，从 `projects/current/` 重建 Engine。旧 `draft/`、`drafts/`、`releases/` 和 `active.json` 不再读取或迁移，部署前应由运维备份后清理。
 
 ## 8. 安全与运维
 
@@ -127,7 +137,7 @@ Adapter 启动时删除遗留 Candidate，只从 `projects/current/` 重建 Engi
 - Catalog 只保存规划所需 Schema，不包含 Java 类名、方法键、SQL 或客户凭据。
 - Runtime 可在 Control Plane 暂时不可用时启动，但规划状态必须为 `NOT_READY`。
 - 后台恢复任务自动重新确认本地实际 Current Catalog；不允许管理员直接编辑 YAML 或手工覆盖摘要。
-- Profile 被 Modeling 或 Current MDL 使用时禁止删除。
+- Profile 删除通过完整候选确认与提交移除建模及 Current MDL，正在探测时拒绝删除。
 
 ## 9. 验收证据
 

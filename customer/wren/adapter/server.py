@@ -259,6 +259,21 @@ class WrenRuntime:
                 "truncated": truncated,
             }
 
+    def remove_current(self, source_key: str, target: Path, previous: Path, remove_configuration: Any) -> None:
+        """在查询锁内移除源；配置持久化失败时恢复原文件，其他源保持可用。"""
+        with self._lock:
+            self.close(source_key)
+            if target.exists():
+                os.replace(target, previous)
+            try:
+                remove_configuration()
+            except Exception:
+                if previous.exists():
+                    os.replace(previous, target)
+                raise
+            self._projects.pop(source_key, None)
+            self._manifests.pop(source_key, None)
+
     def dry_plan(self, source_key: str, sql: str) -> dict[str, str]:
         if not sql or not sql.strip():
             raise ValueError("sql is required")
@@ -595,6 +610,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._require_service_token()
             payload = self._read_payload(required=method != "DELETE")
+            display_name_match = re.fullmatch(r"/internal/admin/datasources/([^/]+)/display-name", path)
             datasource_match = re.fullmatch(r"/internal/admin/datasources/([^/]+)", path)
             relationship_match = re.fullmatch(r"/internal/admin/modeling/relationships/([^/]+)", path)
             model_match = re.fullmatch(r"/internal/admin/modeling/models/([^/]+)", path)
@@ -605,6 +621,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if candidate_match and method == "DELETE":
                 self._respond(200, "OK", self.admin.discard_candidate(candidate_match.group(1)))
+                return
+            if display_name_match and method == "PUT":
+                name = unquote(display_name_match.group(1))
+                self._respond(200, "OK", self.admin.update_datasource_display_name(name, payload))
                 return
             if datasource_match:
                 name = unquote(datasource_match.group(1))
@@ -724,7 +744,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond(200, "OK", self.admin.validate_modeling(payload.get("profileName")))
                 return
             if path == "/internal/admin/mdl-candidates":
-                self._respond(201, "OK", self.admin.prepare_mdl(payload.get("profileName")))
+                self._respond(201, "OK", self.admin.prepare_mdl(
+                    payload.get("profileName"), payload.get("deleteDatasource") is True))
                 return
             commit_match = re.fullmatch(r"/internal/admin/mdl-candidates/([a-f0-9]{32})/commit", path)
             if commit_match:
@@ -803,8 +824,7 @@ class Handler(BaseHTTPRequestHandler):
         action = payload.get("action")
         name = payload.get("name")
         if action == "delete" and isinstance(name, str):
-            self.runtime.close()
-            self._respond(200, "OK", {"deleted": remove_profile(name)})
+            self._respond(200, "OK", self.admin.delete_datasource(name))
             return
         if action in {"create", "update"} and isinstance(name, str) and isinstance(payload.get("profile"), dict):
             profile = dict(payload["profile"])

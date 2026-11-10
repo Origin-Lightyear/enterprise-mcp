@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.aop.support.AopUtils;
-import com.customer.mcp.tool.publicmcp.K3ExploreTool;
+import com.customer.mcp.tool.publicmcp.k3.unfixed.K3ExploreTool;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "enterprise.wren.enabled=false",
         "enterprise.debug.enabled=false",
         "enterprise.k3.enabled=true",
+        "enterprise.tenant-mcp-token=pU6R-g2nq60p5LnBV5ZmNarwOpncqcfBDdBxUWu302E",
         "enterprise.wren.admin-token=test-admin-token",
         "saas.verify.agent-public-key-pem="
                 + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAm1kqdjC5dglLfizpvid0axXg0v5S2+MmJ9BjC5b9OfCfM8RHDwCG"

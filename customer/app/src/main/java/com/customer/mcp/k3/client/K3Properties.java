@@ -11,6 +11,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "enterprise.k3")
 public class K3Properties {
 
+    /** 金蝶 API 数据源稳定标识，修改后既有员工凭证绑定将不再匹配。 */
+    private String sourceId = "kingdee-k3";
+    /** 金蝶 API 数据源显示名称。 */
+    private String displayName = "金蝶云星空";
+
     /** 显式启用金蝶能力，避免未配置客户看到不可用工具。 */
     private boolean enabled;
 
@@ -18,16 +23,10 @@ public class K3Properties {
     private String serverUrl = "";
     /** 金蝶账套 ID。 */
     private String acctId = "";
-    /** 登录模式，支持 appsecret 与 password。 */
-    private String authMode = "appsecret";
-    /** 金蝶应用 ID。 */
+    /** 金蝶数据源级应用编号，不属于员工身份。 */
     private String appId = "";
-    /** 金蝶应用密钥。 */
+    /** 金蝶数据源级应用密钥，不属于员工身份。 */
     private String appSecret = "";
-    /** 金蝶登录用户。 */
-    private String username = "";
-    /** 金蝶登录密码。 */
-    private String password = "";
     /** 金蝶语言 ID。 */
     private int lcid = 2052;
     /** 本地元数据缓存目录。 */
@@ -36,28 +35,25 @@ public class K3Properties {
     private String knowledgeDir = "./data/k3/learned";
 
     public boolean isConfigured() {
-        return !serverUrl.isBlank() && !acctId.isBlank() && !username.isBlank()
-                && ("password".equalsIgnoreCase(authMode)
-                ? !password.isBlank() : !appId.isBlank() && !appSecret.isBlank());
+        return !sourceId.isBlank() && !serverUrl.isBlank() && !acctId.isBlank()
+                && !appId.isBlank() && !appSecret.isBlank();
     }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public String getSourceId() { return sourceId; }
+    public void setSourceId(String sourceId) { this.sourceId = sourceId == null ? "" : sourceId; }
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName == null ? "" : displayName; }
 
     public String getServerUrl() { return serverUrl; }
     public void setServerUrl(String serverUrl) { this.serverUrl = serverUrl == null ? "" : serverUrl; }
     public String getAcctId() { return acctId; }
     public void setAcctId(String acctId) { this.acctId = acctId == null ? "" : acctId; }
-    public String getAuthMode() { return authMode; }
-    public void setAuthMode(String authMode) { this.authMode = authMode == null ? "" : authMode; }
     public String getAppId() { return appId; }
     public void setAppId(String appId) { this.appId = appId == null ? "" : appId; }
     public String getAppSecret() { return appSecret; }
     public void setAppSecret(String appSecret) { this.appSecret = appSecret == null ? "" : appSecret; }
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username == null ? "" : username; }
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password == null ? "" : password; }
     public int getLcid() { return lcid; }
     public void setLcid(int lcid) { this.lcid = lcid; }
     public String getMetadataCacheDir() { return metadataCacheDir; }

@@ -62,8 +62,12 @@ Tenant 后端向该 MCP 实例的管理入口发起调用，Enterprise-mcp 不�
 
 ```text
 POST /internal/upgrades
-X-MCP-Upgrade-Token: <与 ENTERPRISE_MCP_UPGRADE_TOKEN 相同的值>
+X-Tenant-Mcp-Token: <与 TENANT_MCP_TOKEN 相同的值>
 Content-Type: application/json
 ```
 
-请求体包含 Platform 下发的 `downloadUrl`、`version` 和 `sha256`。Enterprise-mcp 只启动固定的 `enterprise-mcp-updater.sh`，不接受请求方传入任意 shell 命令。配置 `ENTERPRISE_MCP_INSTANCE_ID`、`ENTERPRISE_MCP_UPGRADE_TOKEN` 和 `ENTERPRISE_MCP_UPDATER_COMMAND` 后重启服务即可启用该入口。
+请求体包含 Platform 下发的 `downloadUrl`、`version` 和 `sha256`。Enterprise-mcp 只启动固定的
+`enterprise-mcp-updater.sh`，不接受请求方传入任意 shell 命令。配置
+`ENTERPRISE_MCP_INSTANCE_ID`（Runtime 实例编号）、`TENANT_MCP_TOKEN`（当前实例通信 Token）和
+`ENTERPRISE_MCP_UPDATER_COMMAND`（升级脚本路径）后重启服务即可启用该入口。Token 生成方式见
+`deploy/security/README.md`。

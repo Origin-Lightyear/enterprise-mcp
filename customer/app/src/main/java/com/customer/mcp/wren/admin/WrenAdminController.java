@@ -1,6 +1,7 @@
 package com.customer.mcp.wren.admin;
 
 import com.customer.mcp.wren.WrenSidecarClient;
+import com.kevin.mcp.catalog.CatalogException;
 import com.kevin.mcp.catalog.CatalogState;
 import com.kevin.mcp.catalog.MdlUpdateCommand;
 import com.kevin.mcp.catalog.MdlUpdateResult;
@@ -107,7 +108,25 @@ public class WrenAdminController {
      */
     @PutMapping("/datasources/{name}")
     public Map<?, ?> updateDatasource(@PathVariable String name, @RequestBody DatasourceRequest request) {
-        return exchange(HttpMethod.PUT, "/internal/admin/datasources/" + segment(name), request);
+        Map<?, ?> result = exchange(HttpMethod.PUT, "/internal/admin/datasources/" + segment(name), request);
+        synchronizeDatasourceDisplayNames(name);
+        return result;
+    }
+
+    /**
+     * 只更新指定数据源的可变显示名称，不重新测试数据库连接。
+     *
+     * @param name Profile 稳定标识
+     * @param request 新显示名称
+     * @return 更新后的稳定标识与显示名称
+     */
+    @PutMapping("/datasources/{name}/display-name")
+    public Map<?, ?> updateDatasourceDisplayName(@PathVariable String name,
+                                                  @RequestBody DisplayNameRequest request) {
+        Map<?, ?> result = exchange(HttpMethod.PUT,
+                "/internal/admin/datasources/" + segment(name) + "/display-name", request);
+        synchronizeDatasourceDisplayNames(name);
+        return result;
     }
 
     /**
@@ -122,14 +141,34 @@ public class WrenAdminController {
     }
 
     /**
-     * 删除未被建模内容或 Current MDL 使用的数据源。
+     * 经云端确认后删除数据源及其草稿和 Current MDL，失败时保留未提交内容。
      *
      * @param name Profile 名称
-     * @return 删除结果
+     * @param request 预期摘要与稳定幂等键
+     * @param servletRequest 已通过管理 Session 校验的请求
+     * @return 删除后的 Catalog 绑定
      */
     @DeleteMapping("/datasources/{name}")
-    public Map<?, ?> deleteDatasource(@PathVariable String name) {
-        return exchange(HttpMethod.DELETE, "/internal/admin/datasources/" + segment(name), null);
+    public Map<?, ?> deleteDatasource(@PathVariable String name, @RequestBody DatasourceDeleteRequest request,
+                                     HttpServletRequest servletRequest) {
+        WrenAdminSessionService.Session session = (WrenAdminSessionService.Session) servletRequest.getAttribute(
+                WrenAdminSessionService.Session.class.getName());
+        if (session == null) {
+            throw new SecurityException("Authenticated administrator is required");
+        }
+        return response(runtimeCatalog.applyMdl(new MdlUpdateCommand(name,
+                request.expectedMdlDigest(), request.idempotencyKey(), session.id(), true)));
+    }
+
+    /**
+     * 承载删除操作的并发校验与重试身份。
+     *
+     * @param expectedMdlDigest 页面读取的当前 MDL 摘要
+     * @param idempotencyKey 本次删除操作的稳定幂等键
+     * @author Kevin
+     * @date 2026-10-23
+     */
+    public record DatasourceDeleteRequest(String expectedMdlDigest, String idempotencyKey) {
     }
 
     /**
@@ -316,6 +355,16 @@ public class WrenAdminController {
         return client.adminExchange(method, path, body);
     }
 
+    private void synchronizeDatasourceDisplayNames(String profileName) {
+        // 显示名称属于规划上下文；本地保存成功后立即发布新 Catalog，失败时由 NOT_READY 恢复任务重试。
+        try {
+            runtimeCatalog.synchronize();
+        } catch (CatalogException exception) {
+            log.warn("Datasource was saved but Catalog display-name synchronization is pending: profileName={}, code={}",
+                    profileName, exception.code());
+        }
+    }
+
     private Map<String, Object> response(Object data) {
         return Map.of("code", "OK", "message", "OK", "data", data,
                 "requestId", UUID.randomUUID().toString());
@@ -329,6 +378,7 @@ public class WrenAdminController {
      * 表示数据源创建或更新输入。
      *
      * @param name Profile 名称
+     * @param displayName 数据源显示名称，允许中文且不参与 Profile 路由
      * @param datasource 数据源类型
      * @param host 数据库主机
      * @param port 数据库端口
@@ -340,9 +390,16 @@ public class WrenAdminController {
      * @param driver SQL Server 驱动名称
      * @param active 是否切换为活动 Profile
      */
-    public record DatasourceRequest(String name, String datasource, String host, String port, String database,
-                                    String user, String password, String secretName, String sslMode,
+    public record DatasourceRequest(String name, String displayName, String datasource, String host, String port,
+                                    String database, String user, String password, String secretName, String sslMode,
                                     String driver, Boolean active) { }
+
+    /**
+     * 表示不触碰连接配置的显示名称更新输入。
+     *
+     * @param displayName 数据源显示名称，允许中文
+     */
+    public record DisplayNameRequest(String displayName) { }
 
     /**
      * 表示 Schema 探测输入。

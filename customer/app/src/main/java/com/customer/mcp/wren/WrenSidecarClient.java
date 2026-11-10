@@ -148,6 +148,25 @@ public class WrenSidecarClient implements SemanticModelSnapshotProvider, Current
         return new PreparedMdl(candidateToken, snapshotFromData(data));
     }
 
+    /**
+     * 固化删除候选，允许最后一个生效源移除后的空 MDL 快照。
+     *
+     * @param profileName 待删除的数据源
+     * @return 未提交的删除候选
+     */
+    @Override
+    public PreparedMdl prepareDeletion(String profileName) {
+        Map<?, ?> response = adminExchange(HttpMethod.POST, "/internal/admin/mdl-candidates",
+                Map.of("profileName", profileName, "deleteDatasource", true));
+        Map<?, ?> data = responseData(response, "Wren deletion candidate response is invalid");
+        Object token = data.get("candidateToken");
+        if (!(token instanceof String candidateToken)) {
+            throw new IllegalStateException("Wren candidate token is invalid");
+        }
+        validateCandidateToken(candidateToken);
+        return new PreparedMdl(candidateToken, snapshotFromData(data));
+    }
+
     @Override
     public SemanticModelSnapshot commit(String candidateToken, String expectedMdlDigest) {
         validateCandidateToken(candidateToken);
@@ -228,6 +247,33 @@ public class WrenSidecarClient implements SemanticModelSnapshotProvider, Current
         }
     }
 
+    /**
+     * 读取数据源稳定标识到可变显示名称的映射。
+     *
+     * <p>该映射只用于管理界面和 Tenant 权限列表展示，不得替代 Current MDL 的 sourceKey。</p>
+     *
+     * @return 按稳定数据源标识索引的显示名称
+     */
+    @Override
+    public Map<String, String> datasourceDisplayNames() {
+        Map<?, ?> response = adminExchange(HttpMethod.GET, "/internal/admin/datasources", null);
+        Map<?, ?> data = responseData(response, "Wren datasource response is invalid");
+        if (!(data.get("items") instanceof Iterable<?> items)) {
+            throw new IllegalStateException("Wren datasource items are invalid");
+        }
+        LinkedHashMap<String, String> result = new LinkedHashMap<>();
+        for (Object rawItem : items) {
+            if (!(rawItem instanceof Map<?, ?> item) || !(item.get("name") instanceof String name)
+                    || name.isBlank()) {
+                throw new IllegalStateException("Wren datasource item is invalid");
+            }
+            Object rawDisplayName = item.get("displayName");
+            String displayName = rawDisplayName instanceof String value && !value.isBlank() ? value : name;
+            result.put(name, displayName);
+        }
+        return Map.copyOf(result);
+    }
+
     /** 下载当前 Wren 数据源与 MDL 的受保护备份。 */
     public byte[] downloadBackup() {
         try {
@@ -260,6 +306,10 @@ public class WrenSidecarClient implements SemanticModelSnapshotProvider, Current
     }
 
     private SemanticModelSnapshot snapshotFromData(Map<?, ?> data) {
+        if (Boolean.FALSE.equals(data.get("configured")) && "".equals(data.get("mdlDigest"))
+                && data.get("manifest") instanceof Map<?, ?> empty && empty.isEmpty()) {
+            return SemanticModelSnapshot.empty();
+        }
         if (!(data.get("mdlDigest") instanceof String digest) || digest.isBlank()
                 || !(data.get("manifest") instanceof Map<?, ?> manifest) || manifest.isEmpty()) {
             throw new IllegalStateException("Wren MDL snapshot is invalid");

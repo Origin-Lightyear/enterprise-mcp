@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import threading
 import time
+import unicodedata
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -45,7 +46,10 @@ PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$")
 SECRET_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_$-]{0,127}$")
 LOGGER = logging.getLogger(__name__)
-BACKUP_FORMAT_VERSION = 1
+BACKUP_FORMAT_VERSION = 2
+SUPPORTED_BACKUP_FORMAT_VERSIONS = {1, BACKUP_FORMAT_VERSION}
+DATASOURCE_METADATA_VERSION = 1
+MAX_DISPLAY_NAME_LENGTH = 64
 MAX_BACKUP_BYTES = 50 * 1024 * 1024
 MAX_BACKUP_ENTRIES = 20_000
 MAX_BACKUP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
@@ -142,6 +146,7 @@ class AdminService:
         self.jobs_dir = instance_home / "jobs"
         self.audit_file = instance_home / "audit" / "wren-admin-audit.jsonl"
         self.env_file = instance_home / ".wren" / ".env"
+        self.datasource_metadata_file = instance_home / ".wren" / "datasource-metadata.json"
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wren-introspection")
         self._active_job_id: str | None = None
@@ -151,17 +156,101 @@ class AdminService:
         self.modeling_dir.mkdir(parents=True, exist_ok=True)
         self.current_dir.mkdir(parents=True, exist_ok=True)
         self.candidates_dir.mkdir(parents=True, exist_ok=True)
+        recovered = False
         for candidate in self.candidates_dir.iterdir():
             if candidate.is_dir():
+                recovered = self._recover_deletion(candidate) or recovered
                 shutil.rmtree(candidate, ignore_errors=True)
+        if recovered:
+            self.runtime.reload_from_disk(self.current_dir)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.audit_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def _recover_deletion(self, root: Path) -> bool:
+        """恢复进程中止前尚未完成的删除事务，禁止启动清理误删原模型。"""
+        journal = _read_json(root / "deletion-journal.json", {})
+        if not journal:
+            return False
+        if journal.get("committed") is True:
+            return True
+        name = str(journal["profileName"])
+        modeling = self._modeling_path(name)
+        for saved, target in ((root / "modeling", modeling), (root / "previous", self.current_dir / name)):
+            if saved.exists():
+                if target.exists():
+                    raise RuntimeError("DELETE_RECOVERY_CONFLICT")
+                os.replace(saved, target)
+        for key, target in (("profiles", self.instance_home / ".wren" / "profiles.yml"),
+                            ("env", self.env_file)):
+            if journal.get(key) is not None:
+                _atomic_write(target, journal[key])
+        if "metadata" in journal:
+            metadata = journal.get("metadata")
+            self._restore_text_file(
+                self.datasource_metadata_file,
+                metadata.encode("utf-8") if isinstance(metadata, str) else None,
+            )
+        self._audit("DATASOURCE_DELETE_RECOVERED", name, "SUCCEEDED")
+        return True
 
     def _modeling_path(self, profile_name: str) -> Path:
         """返回经过 Profile 名称约束的数据源独立建模目录。"""
         if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
             raise ValueError("profile name must match [A-Za-z][A-Za-z0-9_-]{1,63}")
         return self.modeling_dir / profile_name
+
+    def _load_datasource_display_names(self) -> dict[str, str]:
+        """读取独立展示元数据，避免把非连接字段传给 Wren Connector。"""
+        metadata = _read_json(self.datasource_metadata_file, {"version": DATASOURCE_METADATA_VERSION,
+                                                               "displayNames": {}})
+        if (not isinstance(metadata, dict)
+                or metadata.get("version") != DATASOURCE_METADATA_VERSION
+                or not isinstance(metadata.get("displayNames"), dict)):
+            raise ValueError("datasource display metadata is invalid")
+        result: dict[str, str] = {}
+        for profile_name, display_name in metadata["displayNames"].items():
+            if isinstance(profile_name, str) and isinstance(display_name, str):
+                result[profile_name] = display_name
+        return result
+
+    def _write_datasource_display_names(self, display_names: dict[str, str]) -> None:
+        """原子保存数据源展示名称，内部 Profile 标识始终保持不变。"""
+        _write_json(self.datasource_metadata_file, {
+            "version": DATASOURCE_METADATA_VERSION,
+            "displayNames": dict(sorted(display_names.items())),
+        })
+
+    @staticmethod
+    def _restore_text_file(path: Path, content: bytes | None) -> None:
+        """回滚一次配置写入；原文件不存在时删除本次创建的文件。"""
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            _atomic_write(path, content.decode("utf-8"))
+
+    @staticmethod
+    def _normalize_display_name(value: Any) -> str:
+        """规范化可见名称并拒绝控制字符，允许安全展示中文和常用符号。"""
+        if not isinstance(value, str):
+            raise ValueError("displayName is required")
+        display_name = unicodedata.normalize("NFC", value).strip()
+        if not display_name or len(display_name) > MAX_DISPLAY_NAME_LENGTH:
+            raise ValueError(f"displayName must contain 1-{MAX_DISPLAY_NAME_LENGTH} characters")
+        if any(unicodedata.category(character).startswith("C") for character in display_name):
+            raise ValueError("displayName contains control characters")
+        return display_name
+
+    def _require_unique_display_name(self, profile_name: str, display_name: str,
+                                     display_names: dict[str, str]) -> None:
+        """拒绝同一 Runtime 中容易误选的重复展示名称。"""
+        existing_profiles = list_profiles()
+        normalized = display_name.casefold()
+        for existing_name in existing_profiles:
+            if existing_name == profile_name:
+                continue
+            existing_display_name = display_names.get(existing_name, existing_name)
+            if unicodedata.normalize("NFC", existing_display_name).strip().casefold() == normalized:
+                raise ValueError("displayName already exists")
 
     def _initialize_modeling_path(self, profile_name: str, datasource: str = "mysql") -> Path:
         """创建单个数据源的建模骨架，避免不同 Profile 共用模型文件。"""
@@ -204,12 +293,14 @@ class AdminService:
     def create_backup(self) -> bytes:
         """打包可恢复的数据源凭据、建模草稿和 Current MDL。"""
         manifest = {"format": "enterprise-mcp-wren-backup", "version": BACKUP_FORMAT_VERSION,
-                    "includes": [".wren/profiles.yml", ".wren/.env", "projects/modeling", "projects/current"]}
+                    "includes": [".wren/profiles.yml", ".wren/.env", ".wren/datasource-metadata.json",
+                                 "projects/modeling", "projects/current"]}
         output = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
             roots = [(self.instance_home / ".wren" / "profiles.yml", ".wren/profiles.yml"),
-                     (self.env_file, ".wren/.env")]
+                     (self.env_file, ".wren/.env"),
+                     (self.datasource_metadata_file, ".wren/datasource-metadata.json")]
             for root, prefix in roots:
                 if root.is_file():
                     if root.is_symlink():
@@ -261,7 +352,8 @@ class AdminService:
                             raise ValueError("backup contains a symbolic link")
                         if name == "manifest.json":
                             continue
-                        if name not in {".wren/profiles.yml", ".wren/.env"} and not name.startswith(("projects/modeling/", "projects/current/")):
+                        if name not in {".wren/profiles.yml", ".wren/.env", ".wren/datasource-metadata.json"} \
+                                and not name.startswith(("projects/modeling/", "projects/current/")):
                             raise ValueError("backup contains an unsupported file")
                         total += info.file_size
                         if total > MAX_BACKUP_UNCOMPRESSED_BYTES:
@@ -270,7 +362,8 @@ class AdminService:
                         manifest = json.loads(archive.read("manifest.json"))
                     except Exception as exception:
                         raise ValueError("backup manifest is invalid") from exception
-                    if manifest.get("format") != "enterprise-mcp-wren-backup" or manifest.get("version") != BACKUP_FORMAT_VERSION:
+                    if (manifest.get("format") != "enterprise-mcp-wren-backup"
+                            or manifest.get("version") not in SUPPORTED_BACKUP_FORMAT_VERSIONS):
                         raise ValueError("backup format is unsupported")
                     if "manifest.json" not in names:
                         raise ValueError("backup manifest is missing")
@@ -292,6 +385,7 @@ class AdminService:
                 (staging / "projects" / "current").mkdir(parents=True, exist_ok=True)
                 replacements = [(staging / ".wren" / "profiles.yml", self.instance_home / ".wren" / "profiles.yml"),
                                 (staging / ".wren" / ".env", self.env_file),
+                                (staging / ".wren" / "datasource-metadata.json", self.datasource_metadata_file),
                                 (staging / "projects" / "modeling", self.modeling_dir),
                                 (staging / "projects" / "current", self.current_dir)]
                 for source, target in replacements:
@@ -331,11 +425,13 @@ class AdminService:
         active = get_active_name()
         modeled_profiles = self._modeled_profiles()
         current_profiles = self._current_profiles()
+        display_names = self._load_datasource_display_names()
         items = []
         for name, profile in sorted(list_profiles().items()):
             items.append(
                 {
                     "name": name,
+                    "displayName": display_names.get(name, name),
                     "datasource": profile.get("datasource"),
                     "host": profile.get("host"),
                     "port": profile.get("port"),
@@ -369,10 +465,12 @@ class AdminService:
             raise ValueError("secretName must use uppercase letters, digits and underscores")
         password = payload.get("password")
         with self._lock:
-            if isinstance(password, str) and password:
-                self._update_secret(secret_name, password)
-            elif secret_name not in os.environ and update_name is None:
-                raise ValueError("password is required when creating a datasource")
+            display_names = self._load_datasource_display_names()
+            requested_display_name = payload.get("displayName")
+            display_name = self._normalize_display_name(
+                display_names.get(name, name) if requested_display_name is None else requested_display_name
+            )
+            self._require_unique_display_name(name, display_name, display_names)
             profile = {
                 "datasource": datasource,
                 "host": host,
@@ -385,13 +483,58 @@ class AdminService:
                 profile["sslMode"] = str(payload.get("sslMode") or "ENABLED")
             if datasource == "mssql":
                 profile["driver"] = str(payload.get("driver") or _default_mssql_driver())
-            self._test_profile(profile)
-            add_profile(name, profile, activate=bool(payload.get("active", True)))
-            if bool(payload.get("active", True)):
-                switch_profile(name)
-            self.runtime.close()
-            self._audit("DATASOURCE_SAVED", name, "SUCCEEDED")
-        return {"name": name, "datasource": datasource, "tested": True}
+            profiles_file = self.instance_home / ".wren" / "profiles.yml"
+            profiles_before = profiles_file.read_bytes() if profiles_file.exists() else None
+            env_before = self.env_file.read_bytes() if self.env_file.exists() else None
+            metadata_before = (self.datasource_metadata_file.read_bytes()
+                               if self.datasource_metadata_file.exists() else None)
+            secret_was_present = secret_name in os.environ
+            secret_before = os.environ.get(secret_name)
+            try:
+                if isinstance(password, str) and password:
+                    self._update_secret(secret_name, password)
+                elif secret_name not in os.environ and update_name is None:
+                    raise ValueError("password is required when creating a datasource")
+                self._test_profile(profile)
+                add_profile(name, profile, activate=bool(payload.get("active", True)))
+                if bool(payload.get("active", True)):
+                    switch_profile(name)
+                display_names[name] = display_name
+                self._write_datasource_display_names(display_names)
+                self.runtime.close()
+                self._audit("DATASOURCE_SAVED", name, "SUCCEEDED")
+            except Exception:
+                self._restore_text_file(profiles_file, profiles_before)
+                self._restore_text_file(self.env_file, env_before)
+                self._restore_text_file(self.datasource_metadata_file, metadata_before)
+                if secret_was_present and secret_before is not None:
+                    os.environ[secret_name] = secret_before
+                else:
+                    os.environ.pop(secret_name, None)
+                raise
+        return {"name": name, "displayName": display_name, "datasource": datasource, "tested": True}
+
+    def update_datasource_display_name(self, profile_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """只更新可变显示名称，不测试连接或改写稳定 Profile 标识。"""
+        if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
+            raise ValueError("profile name must match [A-Za-z][A-Za-z0-9_-]{1,63}")
+        with self._lock:
+            profiles = list_profiles()
+            if profile_name not in profiles:
+                raise ValueError("datasource profile does not exist")
+            display_names = self._load_datasource_display_names()
+            display_name = self._normalize_display_name(payload.get("displayName"))
+            self._require_unique_display_name(profile_name, display_name, display_names)
+            metadata_before = (self.datasource_metadata_file.read_bytes()
+                               if self.datasource_metadata_file.exists() else None)
+            try:
+                display_names[profile_name] = display_name
+                self._write_datasource_display_names(display_names)
+                self._audit("DATASOURCE_DISPLAY_NAME_UPDATED", profile_name, "SUCCEEDED")
+            except Exception:
+                self._restore_text_file(self.datasource_metadata_file, metadata_before)
+                raise
+        return {"name": profile_name, "displayName": display_name}
 
     def test_datasource(self, name: str) -> dict[str, Any]:
         started = time.monotonic()
@@ -410,14 +553,23 @@ class AdminService:
             connector.close()
 
     def delete_datasource(self, name: str) -> dict[str, Any]:
-        if name in self._modeled_profiles():
-            raise RuntimeError("PROFILE_IN_USE")
-        if name in self._current_profiles():
-            raise RuntimeError("PROFILE_IN_USE")
-        deleted = remove_profile(name)
-        self.runtime.close()
-        self._audit("DATASOURCE_DELETED", name, "SUCCEEDED" if deleted else "NOT_FOUND")
-        return {"deleted": deleted}
+        """保留内部直删入口，仅允许未被建模和 Current MDL 使用的连接。"""
+        with self._lock:
+            self._modeling_path(name)
+            self._require_no_introspection(name)
+            if name in self._modeled_profiles() or name in self._current_profiles():
+                raise RuntimeError("PROFILE_IN_USE")
+            deleted = remove_profile(name)
+            self.runtime.close()
+            self._audit("DATASOURCE_DELETED", name, "SUCCEEDED" if deleted else "NOT_FOUND")
+            return {"deleted": deleted}
+
+    def _require_no_introspection(self, name: str) -> None:
+        """拒绝删除正在探测的连接，避免后台任务随后重新生成已删除内容。"""
+        if self._active_job_id:
+            job = self.get_job(self._active_job_id)
+            if job.get("profileName") == name and job.get("status") in {"PENDING", "RUNNING"}:
+                raise RuntimeError("INTROSPECTION_IN_PROGRESS")
 
     def create_introspection_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         profile_name = str(payload.get("profileName", ""))
@@ -546,6 +698,9 @@ class AdminService:
         if existing and existing.get("models"):
             modeling = self._merge_modeling_semantics(existing, modeling)
         with self._lock:
+            # 已完成的旧探测结果不能重新创建被删除数据源的草稿。
+            if str(snapshot.get("profileName")) not in list_profiles():
+                raise KeyError("PROFILE_NOT_FOUND")
             self._persist_modeling(modeling)
         self._audit("MODELING_CREATED", job_id, "SUCCEEDED")
         return modeling
@@ -768,9 +923,11 @@ class AdminService:
             errors.append({"path": "modeling", "message": message})
         return {"valid": not errors, "errors": errors, "warnings": warnings}
 
-    def prepare_mdl(self, profile_name: str | None = None) -> dict[str, Any]:
+    def prepare_mdl(self, profile_name: str | None = None, delete_datasource: bool = False) -> dict[str, Any]:
         """固化一次不可变候选并返回完整候选 Current MDL 快照。"""
         with self._lock:
+            if delete_datasource:
+                return self._prepare_deletion(str(profile_name or ""))
             model = self.get_modeling(profile_name)
             model_profile = model.get("profileName")
             validation = self.validate_modeling(str(model_profile) if model_profile else None)
@@ -795,6 +952,90 @@ class AdminService:
                 "manifest": snapshot["manifest"],
             }
 
+    def _prepare_deletion(self, name: str) -> dict[str, Any]:
+        """固化移除后的完整快照；确认前不修改连接、草稿或生效模型。"""
+        self._modeling_path(name)
+        self._require_no_introspection(name)
+        token = uuid.uuid4().hex
+        root = self.candidates_dir / token
+        snapshot = self._snapshot_for_projects({
+            source: self.current_dir / source for source in self._current_profiles() if source != name
+        })
+        _write_json(root / "candidate.json", {
+            "profileName": name, "deleteDatasource": True,
+            "baseMdlDigest": self.runtime.mdl_digest(),
+            "profile": list_profiles().get(name),
+            "modelingRevision": self.get_modeling(name).get("revision", 0),
+        })
+        self._audit("DATASOURCE_DELETE_PREPARED", name, "SUCCEEDED")
+        return {"candidateToken": token, **snapshot}
+
+    def _commit_deletion(self, root: Path, metadata: dict[str, Any]) -> dict[str, Any]:
+        """在查询锁内移除本地文件和连接；持久化失败时恢复原状态。"""
+        name = str(metadata["profileName"])
+        modeling = self._modeling_path(name)
+        self._require_no_introspection(name)
+        if metadata.get("baseMdlDigest") != self.runtime.mdl_digest():
+            raise RuntimeError("CURRENT_MDL_CHANGED")
+        if (metadata.get("profile") != list_profiles().get(name)
+                or metadata.get("modelingRevision") != self.get_modeling(name).get("revision", 0)):
+            raise RuntimeError("MODELING_CHANGED")
+        profiles_file = self.instance_home / ".wren" / "profiles.yml"
+        profiles_before = profiles_file.read_bytes() if profiles_file.exists() else None
+        env_before = self.env_file.read_bytes() if self.env_file.exists() else None
+        metadata_before = (self.datasource_metadata_file.read_bytes()
+                           if self.datasource_metadata_file.exists() else None)
+        secret_name = f"WREN_{name.upper().replace('-', '_')}_PASSWORD"
+        profile = metadata.get("profile") or {}
+        remaining_profiles = {key: value for key, value in list_profiles().items() if key != name}
+        remove_secret = (profile.get("password") == "${" + secret_name + "}"
+                         and "${" + secret_name + "}" not in json.dumps(remaining_profiles))
+        secret_value = dotenv_values(self.env_file).get(secret_name) if env_before is not None else None
+        saved_modeling = root / "modeling"
+        journal = {"profileName": name, "profiles": profiles_before.decode("utf-8") if profiles_before is not None else None,
+                   "env": env_before.decode("utf-8") if env_before is not None else None,
+                   "metadata": metadata_before.decode("utf-8") if metadata_before is not None else None,
+                   "committed": False}
+        _write_json(root / "deletion-journal.json", journal)
+
+        def remove_configuration() -> None:
+            try:
+                if modeling.exists():
+                    os.replace(modeling, saved_modeling)
+                remove_profile(name)
+                display_names = self._load_datasource_display_names()
+                display_names.pop(name, None)
+                self._write_datasource_display_names(display_names)
+                if remove_secret and env_before is not None:
+                    lines = env_before.decode("utf-8").splitlines(keepends=True)
+                    _atomic_write(self.env_file, "".join(
+                        line for line in lines
+                        if not re.match(r"^\s*(?:export\s+)?" + re.escape(secret_name) + r"\s*=", line)
+                    ))
+                _write_json(root / "deletion-journal.json", {**journal, "committed": True})
+            except Exception:
+                if profiles_before is not None:
+                    _atomic_write(profiles_file, profiles_before.decode("utf-8"))
+                if env_before is not None:
+                    _atomic_write(self.env_file, env_before.decode("utf-8"))
+                self._restore_text_file(self.datasource_metadata_file, metadata_before)
+                if saved_modeling.exists():
+                    os.replace(saved_modeling, modeling)
+                raise
+
+        try:
+            self.runtime.remove_current(name, self.current_dir / name, root / "previous", remove_configuration)
+        except Exception:
+            self._recover_deletion(root)
+            (root / "deletion-journal.json").unlink(missing_ok=True)
+            raise
+        if remove_secret and secret_value is not None and os.environ.get(secret_name) == secret_value:
+            os.environ.pop(secret_name, None)
+        snapshot = self.runtime.context_snapshot()
+        self._audit("DATASOURCE_DELETED", name, "SUCCEEDED")
+        shutil.rmtree(root, ignore_errors=True)
+        return snapshot
+
     def commit_mdl(self, candidate_token: str, expected_mdl_digest: str | None) -> dict[str, Any]:
         """校验 Current MDL 未变化后提交候选，并立即删除被替换内容。"""
         if not re.fullmatch(r"[a-f0-9]{32}", candidate_token):
@@ -807,6 +1048,8 @@ class AdminService:
             candidate_project = candidate_root / "project"
             metadata = _read_json(candidate_root / "candidate.json", {})
             profile_name = metadata.get("profileName")
+            if metadata.get("deleteDatasource") is True:
+                return self._commit_deletion(candidate_root, metadata)
             if not isinstance(profile_name, str) or not candidate_project.is_dir():
                 raise KeyError("CANDIDATE_NOT_FOUND")
             target = self.current_dir / profile_name

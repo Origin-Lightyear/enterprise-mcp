@@ -22,7 +22,7 @@ function cardinalityLabel(value: string) {
   return CARDINALITIES.find((item) => item.value === value)?.label || value;
 }
 
-export function DefineRelationships({ modeling, onBack, onComplete, onDatasources }: { modeling: Modeling; onBack: () => void; onComplete: (modeling: Modeling) => void; onDatasources: () => void }) {
+export function DefineRelationships({ modeling, onBack, onComplete, onDatasources, onModeling }: { modeling: Modeling; onBack: () => void; onComplete: (modeling: Modeling) => void; onDatasources: () => void; onModeling: () => void }) {
   const [relationships, setRelationships] = useState<Relationship[]>(modeling.relationships);
   const [editor, setEditor] = useState<EditorState>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,7 +40,7 @@ export function DefineRelationships({ modeling, onBack, onComplete, onDatasource
     }
   };
 
-  return <Wizard step={2} wide onDatasources={onDatasources}>
+  return <Wizard step={2} wide onModeling={onModeling} onDatasources={onDatasources}>
     <Typography.Title level={1}>定义关系</Typography.Title>
     <Typography.Paragraph>你可以在所选表之间创建关系。Wren 已根据数据库中的主键和外键给出建议，确认后的关系会加入数据模型。</Typography.Paragraph>
     {noRecommendations && <Alert className="relation-alert" type="info" showIcon message="没有推荐关系" description="所选表中未检测到可配对的主键和外键，你仍可手动添加关系。"/>}

@@ -11,6 +11,8 @@ import com.kevin.mcp.annotation.PrivateMcpTool;
 import com.kevin.mcp.annotation.PrivateMcpToolParam;
 import com.kevin.mcp.execution.RequestExecutionContext;
 import com.kevin.mcp.execution.RequestExecutionContextHolder;
+import com.kevin.mcp.authorization.DataSourceAuthorizationService;
+import com.kevin.mcp.authorization.DataSourceOperation;
 import com.kevin.mcp.export.ExportedQueryResult;
 import com.kevin.mcp.export.LargeResultExportService;
 import org.springframework.stereotype.Component;
@@ -31,6 +33,7 @@ public class WrenDatabaseTool {
     private final WrenSidecarClient client;
     private final RequestExecutionContextHolder executionContextHolder;
     private final LargeResultExportService exportService;
+    private final DataSourceAuthorizationService dataSourceAuthorizationService;
 
     /**
      * 注入 Wren 本机客户端和大数据导出服务。
@@ -41,10 +44,12 @@ public class WrenDatabaseTool {
      */
     public WrenDatabaseTool(WrenSidecarClient client,
                             RequestExecutionContextHolder executionContextHolder,
-                            LargeResultExportService exportService) {
+                            LargeResultExportService exportService,
+                            DataSourceAuthorizationService dataSourceAuthorizationService) {
         this.client = client;
         this.executionContextHolder = executionContextHolder;
         this.exportService = exportService;
+        this.dataSourceAuthorizationService = dataSourceAuthorizationService;
     }
 
     /**
@@ -81,6 +86,7 @@ public class WrenDatabaseTool {
         if (sourceKey == null || sourceKey.isBlank()) {
             throw new IllegalArgumentException("sourceKey is required for Wren query");
         }
+        dataSourceAuthorizationService.authorize(context, sourceKey, DataSourceOperation.QUERY);
         request.put("sourceKey", sourceKey);
         request.put("question", question);
         request.put("outputMode", outputMode == null || outputMode.isBlank() ? "table" : outputMode);

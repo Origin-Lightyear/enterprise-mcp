@@ -102,6 +102,7 @@ public class PlanningPrompt {
                 9. intent 必须原样返回用户意图。
                 10. 第一版只能选择 operationMode=READ_ONLY 的能力，禁止生成任何写入、审批、创建、更新或删除计划。
                 11. executorType=WREN 的能力必须从 semanticModel.sources 选择一个真实 sourceKey，并且只接收该数据源的自然语言子问题，禁止传入完整混合需求或 SQL。
+                11.1 semanticSourceDisplayNames 只用于把用户提到的显示名称匹配到同键的 sourceKey；计划参数必须输出稳定 sourceKey，禁止把显示名称作为 sourceKey。
                 12. 一个 Wren 步骤只能访问一个 sourceKey；多表关联、聚合、CTE、子查询或 UNION 只能使用该数据源的 Models。跨数据源需求必须拆成多个 Wren call 步骤，再通过 fromStep 传递结构化结果。
                 13. 多项 API 输入优先选择 batchMode=BATCH 的能力；只有目标能力明确为 FOREACH_FALLBACK 时才允许 foreach。
                 14. 数据库术语、时间范围或目标对象存在实质歧义时返回 error 请求用户澄清，不得静默猜测。

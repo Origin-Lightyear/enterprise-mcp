@@ -1,5 +1,28 @@
 [
   {
+    "formId": "GL_VOUCHERSUMMARY",
+    "name": "凭证汇总",
+    "alias": [
+      "凭证汇总表",
+      "凭证汇总查询",
+      "汇总凭证"
+    ],
+    "desc": "凭证汇总过滤方案存储容器，不是凭证汇总结果数据源；ExecuteBillQuery 几乎只返回保存的过滤方案，GetSysReportData/GL_RPT_VoucherSummary 报表通道也未稳定驱动。凭证汇总查询固定使用 k3_query_voucher_summary：以 GL_Voucher_New 凭证分录为数据源，按账簿、币别、日期、FPOSTERID 过账范围和凭证字过滤后，在服务端按科目编码前缀聚合成科目级别 1、2、3 的借贷汇总。该 FormId 仅保留用于界面与字段语义参照。",
+    "fields": [
+      "FAccountBookID.FNumber",
+      "FAccountBookID.FName",
+      "FDate",
+      "FVOUCHERGROUPID.FName",
+      "FVOUCHERGROUPNO",
+      "FATTACHMENTS",
+      "FACCOUNTID.FNumber",
+      "FACCOUNTID.FName",
+      "FACCOUNTID.FFullName",
+      "FDEBIT",
+      "FCREDIT"
+    ]
+  },
+  {
     "formId": "GL_Voucher_New",
     "name": "总账凭证",
     "alias": [
@@ -1298,6 +1321,54 @@
     "businessRules": [
       "关联申请: 可关联费用申请单；无申请单的报销须走预算外审批流程",
       "审核后付款: 审核后可下推生成付款单"
+    ]
+  },
+  {
+    "formId": "BD_AccountBook",
+    "name": "会计核算账簿",
+    "alias": [
+      "账簿",
+      "核算账簿",
+      "会计账簿",
+      "账簿查询"
+    ],
+    "desc": "会计核算账簿基础资料。固定工具 k3_query_account_book 优先使用：支持按编码或名称模糊查询和全量搜索，keyword 为空即全量；includeAdjustPeriod=true 可附带调整期间列表。手工查询常用字段：FNumber 编码、FName 名称、FUseOrgId.FName 使用组织、FCURRENCYID.FName 记账本位币、FCURRENTPERIOD 当前期间、FCURRENTYEAR 当前年度、FForbidStatus 禁用状态。",
+    "fields": [
+      "FNumber",
+      "FName",
+      "FDescription",
+      "FDocumentStatus",
+      "FForbidStatus",
+      "FUseOrgId.FNumber",
+      "FUseOrgId.FName",
+      "FCURRENCYID.FNumber",
+      "FCURRENCYID.FName",
+      "FPeriodId",
+      "FACCTTABLEID.FNumber",
+      "FACCTTABLEID.FName",
+      "FBOOKTYPE",
+      "FUSEADJUSTPERIOD",
+      "FINITIALSTATUS",
+      "FCURRENTPERIOD",
+      "FCURRENTYEAR",
+      "FSTARTYEAR",
+      "FSTARTPERIOD"
+    ]
+  },
+  {
+    "formId": "GL_AdjustPeriod",
+    "name": "调整期间",
+    "alias": [
+      "调整期间",
+      "账簿调整期间"
+    ],
+    "desc": "账簿调整期间子表，FormId 未经真实账套验证。固定工具 k3_query_account_book includeAdjustPeriod=true 会尝试读取并在失败时返回警告。手工查询常用字段：FYEAR 会计年度、FADJUSTPERIOD 调整期间、FADJUSTSTATUS 状态、FADJUSTNAME 名称、FCOMMENT 说明。",
+    "fields": [
+      "FYEAR",
+      "FADJUSTPERIOD",
+      "FADJUSTSTATUS",
+      "FADJUSTNAME",
+      "FCOMMENT"
     ]
   }
 ]

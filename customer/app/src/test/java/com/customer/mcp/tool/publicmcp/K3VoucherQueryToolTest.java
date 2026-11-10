@@ -1,6 +1,6 @@
 package com.customer.mcp.tool.publicmcp;
 
-import com.customer.mcp.tool.publicmcp.K3VoucherQueryTool;
+import com.customer.mcp.tool.publicmcp.k3.K3VoucherQueryTool;
 import com.customer.mcp.k3.catalog.K3Catalog;
 import com.customer.mcp.k3.client.K3Gateway;
 import com.customer.mcp.k3.client.K3Properties;

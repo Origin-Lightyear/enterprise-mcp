@@ -11,8 +11,6 @@ import com.kevin.mcp.audit.ExecutionAuditService;
 import com.kevin.mcp.audit.PermissionAuditOutboxService;
 import com.kevin.mcp.catalog.RuntimeCatalog;
 import com.kevin.mcp.authorization.LocalAuthorizationService;
-import com.kevin.mcp.authorization.PermissionReviewResult;
-import com.kevin.mcp.authorization.PermissionReviewService;
 import com.kevin.mcp.authorization.PlanBindingValidator;
 import com.kevin.mcp.capability.PrivateMcpToolSchemaRegistry;
 import com.kevin.mcp.clarification.ClarificationElicitationService;
@@ -42,7 +40,7 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * 执行客户 MCP Tool 共用的认证、规划、授权、审计、执行和脱敏流程。
+ * 执行客户 MCP Tool 共用的认证、规划、确定性授权、审计和执行流程。
  *
  * <p>权限规则和员工模型配置只存在于客户 Runtime。Cloud Control Plane 只接收规划所需身份与意图，
  * Wren 通过请求级上下文获得员工模型配置，避免密钥进入计划和 Catalog。</p>
@@ -61,7 +59,6 @@ public class CommonInternalTool {
     private final PlanningService planningService;
     private final JsonPlanParser jsonPlanParser;
     private final JsonPlanExecutor jsonPlanExecutor;
-    private final PermissionReviewService permissionReviewService;
     private final HttpAgentServerClient agentServerClient;
     private final LocalAuthorizationService localAuthorizationService;
     private final PlanBindingValidator planBindingValidator;
@@ -81,7 +78,6 @@ public class CommonInternalTool {
      * @param planningService 云端规划服务
      * @param jsonPlanParser 计划解析器
      * @param jsonPlanExecutor 计划执行器
-     * @param permissionReviewService 权限审查服务
      * @param agentServerClient Tenant 客户端
      * @param localAuthorizationService 本地机械授权服务
      * @param planBindingValidator 计划绑定校验器
@@ -99,7 +95,6 @@ public class CommonInternalTool {
             PlanningService planningService,
             JsonPlanParser jsonPlanParser,
             JsonPlanExecutor jsonPlanExecutor,
-            PermissionReviewService permissionReviewService,
             HttpAgentServerClient agentServerClient,
             LocalAuthorizationService localAuthorizationService,
             PlanBindingValidator planBindingValidator,
@@ -116,7 +111,6 @@ public class CommonInternalTool {
         this.planningService = planningService;
         this.jsonPlanParser = jsonPlanParser;
         this.jsonPlanExecutor = jsonPlanExecutor;
-        this.permissionReviewService = permissionReviewService;
         this.agentServerClient = agentServerClient;
         this.localAuthorizationService = localAuthorizationService;
         this.planBindingValidator = planBindingValidator;
@@ -154,7 +148,7 @@ public class CommonInternalTool {
             int semanticRounds = 0;
             for (int round = 0; round <= MAX_CLARIFICATION_ROUNDS; round++) {
                 try {
-                    return executeAttempt(clarifiedIntent, requestContext, verifiedEmployee, employeeAuth,
+                    return executeAttempt(clarifiedIntent, intent, requestContext, verifiedEmployee, employeeAuth,
                             startedAt);
                 } catch (ClarificationRequiredException exception) {
                     if (++semanticRounds > MAX_CLARIFICATION_ROUNDS) {
@@ -201,7 +195,7 @@ public class CommonInternalTool {
         }
     }
 
-    private Map<Boolean, String> executeAttempt(String intent, McpSyncRequestContext requestContext,
+    private Map<Boolean, String> executeAttempt(String intent, String originalIntent, McpSyncRequestContext requestContext,
                                                 VerifiedEmployee verifiedEmployee, EmployeeAuth employeeAuth,
                                                 Instant startedAt) throws Exception {
 
@@ -220,51 +214,33 @@ public class CommonInternalTool {
         SemanticModelSnapshot semanticModel = semanticPlan ? requireSemanticModel() : SemanticModelSnapshot.empty();
         runtimeCatalog.requireExecutable(executionPlan);
         boolean debugBypass = debugIdentityProvider.isEnabled();
-        boolean requiresReview = !debugBypass
-                && permissionReviewService.requiresReview(employeeAuth.permissionConfig());
-        EmployeeLlmInvocationConfig llmConfig = requiresReview || semanticPlan
+        EmployeeLlmInvocationConfig llmConfig = semanticPlan
                 ? agentServerClient.fetchEmployeeLlmConfig(verifiedEmployee.tenantId(), employeeAuth.employeeId())
                 : null;
-        PermissionReviewResult reviewResult = PermissionReviewResult.allow();
         if (!debugBypass) {
-            if (requiresReview) {
-                notifyInfo(requestContext, "正在校验数据访问权限");
-            }
-            reviewResult = permissionReviewService.review(intent, executionPlan,
-                    employeeAuth.permissionConfig(), llmConfig, semanticModel);
-        }
-
-        if (!debugBypass) {
-            Map<String, Object> auditSummary = buildAuditSummary(executionPlan, reviewResult, employeeAuth,
+            Map<String, Object> auditSummary = buildAuditSummary(executionPlan, employeeAuth,
                     verifiedEmployee.tenantId(), semanticModel.digest());
             // 本地审计必须在任何数据库或 API 调用前成功落盘。
             executionAuditService.recordDecision(auditSummary);
-            permissionAuditOutboxService.enqueue(auditSummary);
-        }
-        if (!"allow".equalsIgnoreCase(reviewResult.decision())) {
-            notifyWarning(requestContext, reviewResult.userMessage());
-            return reviewResult.userMessage() == null || reviewResult.userMessage().isBlank()
-                    ? Map.of(false, "身份校验失败") : Map.of(true, reviewResult.userMessage());
+            permissionAuditOutboxService.enqueue(buildTenantAuditPayload(originalIntent, executionPlan,
+                    auditSummary));
         }
 
         RequestExecutionContext executionContext = new RequestExecutionContext(
-                llmConfig, reviewResult, semanticModel.digest());
+                llmConfig, semanticModel.digest(), verifiedEmployee.tenantId(), employeeAuth.employeeId(),
+                employeeAuth.permissionConfig());
         try (RequestExecutionContextHolder.Scope ignored = executionContextHolder.bind(executionContext)) {
             var executionResult = jsonPlanExecutor.execute(executionPlan, progressListener(requestContext));
             if (!debugBypass) {
                 executionAuditService.record(executionPlan, executionResult);
             }
-            Object maskedResult = debugBypass
-                    ? executionResult.finalResult()
-                    : permissionReviewService.maskFinalResult(
-                            executionResult.finalResult(), reviewResult);
             runtimeCatalog.requireExecutable(executionPlan);
             ExecutionReceipt receipt = new ExecutionReceipt(
                     executionPlan.planId(), "SUCCEEDED", executionPlan.asOf(),
                     executionPlan.consistencyMode(), operationDescriptions(executionPlan.steps()),
                     executionResult.executedSteps().size(), startedAt.toString(), Instant.now().toString());
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("data", maskedResult);
+            response.put("data", executionResult.finalResult());
             response.put("executionReceipt", receipt);
             return Map.of(true, GsonUtil.toJson(response));
         }
@@ -371,7 +347,7 @@ public class CommonInternalTool {
         return false;
     }
 
-    private Map<String, Object> buildAuditSummary(JsonExecutionPlan plan, PermissionReviewResult reviewResult,
+    private Map<String, Object> buildAuditSummary(JsonExecutionPlan plan,
                                                    EmployeeAuth employeeAuth, String tenantId, String mdlDigest) {
         Map<String, Object> audit = new LinkedHashMap<>();
         audit.put("planId", plan.planId());
@@ -382,11 +358,42 @@ public class CommonInternalTool {
         audit.put("catalogDigest", plan.catalogDigest());
         audit.put("mdlDigest", mdlDigest);
         audit.put("capabilityIds", capabilityIds(plan.steps()));
-        audit.put("decision", reviewResult.decision());
-        audit.put("uncertain", reviewResult.uncertain());
-        audit.put("matchedRuleIds", reviewResult.matchedRuleIds());
-        audit.put("reviewVersion", permissionReviewService.reviewVersion());
+        audit.put("decision", "allow");
+        audit.put("authorizationMode", "DATA_SOURCE_POLICY");
         return audit;
+    }
+
+    /**
+     * 按 Tenant 既有入库字段组织载荷，避免将员工请求混入本地强制审计。
+     * 计划仅包含能力和操作摘要，不上报参数、SQL、业务结果或模型内部推理。
+     *
+     * @param originalIntent 员工原始请求，不包含后续拼接的澄清上下文
+     * @param plan 本次确定性授权对应的执行计划
+     * @param auditSummary 已完成本地持久化的安全摘要
+     * @return 符合 Tenant 现有入库字段的上报载荷
+     */
+    private Map<String, Object> buildTenantAuditPayload(String originalIntent, JsonExecutionPlan plan,
+                                                       Map<String, Object> auditSummary) {
+        Map<String, Object> planSummary = new LinkedHashMap<>();
+        planSummary.put("planId", plan.planId());
+        planSummary.put("planContractVersion", plan.planContractVersion());
+        planSummary.put("catalogDigest", plan.catalogDigest());
+        planSummary.put("mdlDigest", auditSummary.get("mdlDigest"));
+        planSummary.put("capabilityIds", auditSummary.get("capabilityIds"));
+        planSummary.put("operations", operationDescriptions(plan.steps()));
+
+        Map<String, Object> reviewSummary = new LinkedHashMap<>();
+        reviewSummary.put("decision", "allow");
+        reviewSummary.put("authorizationMode", "DATA_SOURCE_POLICY");
+        reviewSummary.put("modelInvoked", false);
+
+        Map<String, Object> payload = new LinkedHashMap<>(auditSummary);
+        payload.put("requestMessage", originalIntent);
+        payload.put("planSummary", planSummary);
+        payload.put("reviewResult", reviewSummary);
+        payload.put("matchedRules", List.of());
+        payload.put("modelVersion", null);
+        return payload;
     }
 
     private List<String> capabilityIds(List<JsonExecutionStep> steps) {

@@ -2,6 +2,8 @@ package com.customer.mcp.tool.internalmcp;
 
 import com.customer.mcp.wren.WrenSidecarClient;
 import com.kevin.mcp.agent.model.EmployeeLlmInvocationConfig;
+import com.kevin.mcp.agent.configuration.RuntimeIdentityProperties;
+import com.kevin.mcp.authorization.DataSourceAuthorizationService;
 import com.kevin.mcp.clarification.ClarificationRequiredException;
 import com.kevin.mcp.execution.RequestExecutionContext;
 import com.kevin.mcp.execution.RequestExecutionContextHolder;
@@ -47,11 +49,18 @@ class WrenDatabaseToolTest {
                         )
                 ))).when(client).query(anyMap());
         RequestExecutionContextHolder contextHolder = new RequestExecutionContextHolder();
+        RuntimeIdentityProperties runtimeIdentity = new RuntimeIdentityProperties();
+        runtimeIdentity.setInstanceId("runtime-1");
         WrenDatabaseTool tool = new WrenDatabaseTool(client, contextHolder,
-                new LargeResultExportService(new ExportProperties(), new ExportSessionRegistry()));
+                new LargeResultExportService(new ExportProperties(), new ExportSessionRegistry()),
+                new DataSourceAuthorizationService(runtimeIdentity));
         RequestExecutionContext context = new RequestExecutionContext(
                 new EmployeeLlmInvocationConfig("https://models.example/v1", "secret", "chat"),
-                null, "mdl-digest");
+                "mdl-digest", "tenant-1", 1001L, Map.of("databasePermissions", List.of(Map.of(
+                        "instanceId", "runtime-1",
+                        "dataSourceId", "sales",
+                        "queryAllowed", true
+                ))));
 
         try (RequestExecutionContextHolder.Scope ignored = contextHolder.bind(context)) {
             assertThatThrownBy(() -> tool.query("sales", "查询销售日期", "table"))

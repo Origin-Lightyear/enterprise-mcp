@@ -34,19 +34,16 @@ enterprise:
   # 金蝶云星空连接配置
   k3:
     enabled: ${ENTERPRISE_MCP_K3_ENABLED:true}
+    # API 数据源稳定标识用于员工凭证绑定，部署后不可随显示名称修改。
+    source-id: ${ENTERPRISE_MCP_K3_SOURCE_ID:kingdee-k3}
+    display-name: ${ENTERPRISE_MCP_K3_DISPLAY_NAME:金蝶云星空}
     # 服务器地址,必须包含 /k3cloud/ 后缀
     server-url: ${ENTERPRISE_MCP_K3_SERVER_URL:http://60.28.41.186:8090/k3cloud/}
     # 账套 ID
     acct-id: ${ENTERPRISE_MCP_K3_ACCT_ID:6937797c46fd88}
-    # 认证模式:appsecret(第三方应用授权)或 password(账号密码,携带真实用户数据权限)
-    auth-mode: ${ENTERPRISE_MCP_K3_AUTH_MODE:appsecret}
-    # 第三方应用授权凭据(auth-mode=appsecret 时生效;敏感信息建议用环境变量覆盖)
+    # 数据源级应用凭证保存在客户 Runtime；员工在金蝶中的用户名由 Tenant 按请求身份提供。
     app-id: ${ENTERPRISE_MCP_K3_APP_ID:363000_428PQbiF5mH+QZULw55A1Yxq4I2Y7sLL}
     app-secret: ${ENTERPRISE_MCP_K3_APP_SECRET:023a77b9af67435b9d319a621a3fd3ee}
-    # 登录用户名(两种模式都会传)
-    username: ${ENTERPRISE_MCP_K3_USERNAME:Administrator}
-    # 登录密码(auth-mode=password 时生效)
-    password: ${ENTERPRISE_MCP_K3_PASSWORD:}
     lcid: ${ENTERPRISE_MCP_K3_LCID:2052}
     # 表单元数据磁盘缓存目录(缓存文件名按服务器地址 md5 做多环境隔离)
     metadata-cache-dir: ${ENTERPRISE_MCP_K3_METADATA_CACHE_DIR:./data/k3/metadata-cache}
@@ -60,8 +57,6 @@ enterprise:
 
   # 在线升级配置；开发/传统部署可替换 JAR，容器部署由宿主机 updater 替换镜像。
   upgrade:
-    # 调用本地升级接口时使用的共享令牌；启用远程升级时必填，必须通过 Secret 注入。
-    token: ${ENTERPRISE_MCP_UPGRADE_TOKEN:82c13d8105664aa860887233ea87a720a59ef3652af16cb4a6d432091b41b201}
     # Runtime 触发升级时执行的客户服务器脚本绝对路径。
     command: ${ENTERPRISE_MCP_UPDATER_COMMAND:/usr/local/libexec/enterprise-mcp-updater.sh}
 
@@ -76,6 +71,9 @@ enterprise:
     # 可选的部署期摘要校验值；Runtime packaged 模式自动计算实际运行 JAR，值存在时必须一致。
     # IDE/target/classes 模式自动汇总 classpath 编译输出；两种模式下配置值都只用于可选一致性校验。
     artifact-digest: ${ENTERPRISE_MCP_ARTIFACT_DIGEST:}
+
+  # 当前租户和 Runtime 实例唯一通信 Token；升级、数据源目录和凭证链路统一使用。
+  tenant-mcp-token: ${TENANT_MCP_TOKEN:gFFIzaKW_gyB7tW4JfpYAMC5CuNuFuO6v4ycVycbHac}
 
   # 云端 control-plane 配置。
   planning-gateway:
@@ -119,16 +117,11 @@ enterprise:
     outbox-directory: ${ENTERPRISE_MCP_AUDIT_OUTBOX_DIRECTORY:./data/permission-audit-outbox}
     retry-delay: ${ENTERPRISE_MCP_AUDIT_RETRY_DELAY:30s}
 
-  # 受控调试旁路开关。开启后跳过 Agent 来源验证、权限审查、脱敏和审计，仅供本地联调。
+  # 受控调试身份开关。开启后跳过 Agent 来源签名和审计，但仍执行数据源权限及员工 API 身份约束。
   debug:
-    enabled: false
+    enabled: true
     # 必须是 Tenant 中已启用员工的真实编号；开关开启时必填。
     employee-id: 1
-
-  # 员工 LLM 权限审查超时。
-  permission-review:
-    connect-timeout: ${ENTERPRISE_MCP_PERMISSION_CONNECT_TIMEOUT:3s}
-    read-timeout: ${ENTERPRISE_MCP_PERMISSION_READ_TIMEOUT:60s}
 
 # Platform/Tenant 及 Agent
 saas:

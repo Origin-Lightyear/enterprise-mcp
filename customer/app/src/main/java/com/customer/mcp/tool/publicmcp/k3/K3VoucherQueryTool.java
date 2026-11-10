@@ -1,4 +1,4 @@
-package com.customer.mcp.tool.publicmcp;
+package com.customer.mcp.tool.publicmcp.k3;
 
 import com.customer.mcp.k3.catalog.K3FieldLocalizer;
 import com.customer.mcp.k3.client.K3Gateway;
@@ -22,13 +22,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;

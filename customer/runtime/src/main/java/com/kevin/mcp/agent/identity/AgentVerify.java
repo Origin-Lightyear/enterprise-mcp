@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 校验 AgentServer 请求来源，并在缓存缺失或版本变化时刷新本地租户与员工快照。
+ * 校验 AgentServer 请求来源，并为每个新请求读取当前员工权限快照。
  *
  * @author Kevin
  * @date 2026-07-29
@@ -60,7 +60,7 @@ public class AgentVerify {
     }
 
     /**
-     * 校验请求来源并返回已验证的租户与员工身份，供 LLM 配置和权限审查复用。
+     * 校验请求来源并返回已验证的租户与员工身份，供数据源授权和 API 身份解析复用。
      *
      * @param requestContext MCP 同步请求上下文
      * @return 已验证的员工身份，校验失败时返回 null
@@ -119,25 +119,23 @@ public class AgentVerify {
             return null;
         }
         long cachedVersion = this.tenantCacheService.getTenantVersion(requestInfo.tenantId());
-        EmployeeAuth employeeAuth = this.tenantCacheService.getEmployeeAuth(requestInfo.tenantId(), requestInfo.employeeId());
-
-        // 远端版本号比本地缓存新，或员工鉴权信息在缓存中不存在时，
-        // 从 AgentServer 重新拉取租户配置和员工鉴权快照并刷新本地缓存。
-        // 这避免了服务刚启动或版本升级后首个请求因缓存未命中而被误拒绝。
-        if (requestInfo.versionNumber() > cachedVersion || employeeAuth == null) {
-            if (requestInfo.versionNumber() > cachedVersion) {
-                // 已知 Platform 存在新版本却无法同步时失败关闭，避免租户禁用或到期后继续按旧缓存放行。
-                if (!this.tenantConfigSynchronizer.synchronizeSafely()) {
-                    return null;
-                }
-            }
-            employeeAuth = this.agentServerClient.fetchTenantAuth(requestInfo.tenantId(), requestInfo.employeeId());
-            this.tenantCacheService.refreshEmployeeAuth(requestInfo.tenantId(), employeeAuth);
-        }
-        // 最终权限检查：判断该员工在当前租户下是否被允许发起请求
-        if (!this.tenantCacheService.isTenantRequestAllowed(requestInfo.tenantId(), requestInfo.employeeId())) {
+        // 租户配置仍按Platform版本同步，员工授权每次读取，确保保存和停用后新请求立即生效。
+        if (requestInfo.versionNumber() > cachedVersion && !this.tenantConfigSynchronizer.synchronizeSafely()) {
             return null;
         }
+        EmployeeAuth employeeAuth;
+        try {
+            employeeAuth = this.agentServerClient.fetchTenantAuth(requestInfo.tenantId(), requestInfo.employeeId());
+        } catch (org.springframework.web.client.RestClientException exception) {
+            log.warn("刷新员工权限失败，拒绝本次请求 tenant={}, employee={}", requestInfo.tenantId(), requestInfo.employeeId());
+            return null;
+        }
+        if (employeeAuth == null || !requestInfo.employeeId().equals(employeeAuth.employeeId())
+                || !"ENABLED".equalsIgnoreCase(employeeAuth.status())
+                || TenantAvailability.AVAILABLE != this.tenantCacheService.getTenantAvailability(requestInfo.tenantId())) {
+            return null;
+        }
+        this.tenantCacheService.refreshEmployeeAuth(requestInfo.tenantId(), employeeAuth);
         return new VerifiedEmployee(requestInfo.tenantId(), employeeAuth);
     }
 

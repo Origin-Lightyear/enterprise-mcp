@@ -1,14 +1,20 @@
 import json
 import io
+import os
 import tempfile
 import unittest
 import zipfile
+import shutil
+import threading
+from http.server import ThreadingHTTPServer
+from urllib.request import Request, urlopen
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import yaml
 
 from .admin_service import AdminService, _metadata_text, _next_revision
+from .server import Handler, WrenRuntime
 
 
 class FakeRuntime:
@@ -25,7 +31,317 @@ class FakeRuntime:
         self.reloaded = path
 
 
+class AdminDatasourceDeletionTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "instance" / ".wren"
+        self.home.mkdir(parents=True)
+        self.profiles = self.home / "profiles.yml"
+        self.profiles.write_text(yaml.safe_dump({"active": "sales", "profiles": {
+            "sales": {"datasource": "mysql", "password": "${WREN_SALES_PASSWORD}"},
+            "finance": {"datasource": "postgres", "password": "${WREN_FINANCE_PASSWORD}"},
+        }}), encoding="utf-8")
+        (self.home / ".env").write_text("WREN_SALES_PASSWORD=one\nWREN_FINANCE_PASSWORD=two\n", encoding="utf-8")
+        self.profile_patch = patch.multiple("wren.profile", _WREN_HOME=self.home, _PROFILES_FILE=self.profiles)
+        self.profile_patch.start()
+        self.runtime = WrenRuntime({})
+        self.service = AdminService(self.root / "project", self.root / "instance", self.runtime)
+        self.service._write_datasource_display_names({"sales": "销售数据库", "finance": "财务数据库"})
+        for name in ("sales", "finance"):
+            current = self.service.current_dir / name
+            self.service._persist_modeling({"revision": 1, "profileName": name, "datasource": "mysql", "models": [{
+                "name": "Orders", "displayName": "订单", "description": "", "source": {"catalog": "", "schema": "public", "table": "orders"},
+                "primaryKey": ["id"], "columns": [{"name": "id", "displayName": "编号", "description": "", "type": "BIGINT", "rawType": "bigint", "notNull": True, "primaryKey": True, "visible": True}],
+            }], "relationships": []})
+            shutil.copytree(self.service._modeling_path(name), current)
+        self.runtime.reload_from_disk(self.service.current_dir)
+
+    def tearDown(self):
+        self.service.close()
+        self.runtime.close()
+        self.profile_patch.stop()
+        self.temporary.cleanup()
+
+    def test_prepare_and_cancel_preserve_all_local_state(self):
+        before = self.profiles.read_bytes()
+        digest = self.runtime.mdl_digest()
+        candidate = self.service.prepare_mdl("sales", True)
+        self.assertEqual({"finance"}, set(candidate["manifest"]["sources"]))
+        self.assertEqual(digest, self.runtime.mdl_digest())
+        self.assertEqual(before, self.profiles.read_bytes())
+        self.service.discard_candidate(candidate["candidateToken"])
+        self.assertTrue((self.service.current_dir / "sales").exists())
+        self.assertTrue(self.service._modeling_path("sales").exists())
+
+    def test_commit_removes_connection_modeling_current_and_owned_secret_preserving_other_source(self):
+        digest = self.runtime.mdl_digest()
+        candidate = self.service.prepare_mdl("sales", True)
+        result = self.service.commit_mdl(candidate["candidateToken"], digest)
+        self.assertEqual(candidate["mdlDigest"], result["mdlDigest"])
+        self.assertEqual({"finance"}, set(result["manifest"]["sources"]))
+        self.assertFalse((self.service.current_dir / "sales").exists())
+        self.assertFalse(self.service._modeling_path("sales").exists())
+        profiles = yaml.safe_load(self.profiles.read_text(encoding="utf-8"))
+        self.assertEqual("finance", profiles["active"])
+        self.assertEqual({"finance"}, set(profiles["profiles"]))
+        self.assertEqual("WREN_FINANCE_PASSWORD=two\n", (self.home / ".env").read_text(encoding="utf-8"))
+        self.assertEqual({"finance": "财务数据库"}, self.service._load_datasource_display_names())
+        with self.assertRaisesRegex(ValueError, "sourceKey is not present"):
+            self.runtime.manifest("sales")
+
+    def test_last_source_deletion_returns_empty_current_and_no_active_connection(self):
+        for source in ("sales", "finance"):
+            digest = self.runtime.mdl_digest()
+            candidate = self.service.prepare_mdl(source, True)
+            result = self.service.commit_mdl(candidate["candidateToken"], digest)
+        self.assertEqual({"configured": False, "mdlDigest": "", "manifest": {}}, result)
+        self.assertEqual([], self.service.list_datasources()["items"])
+        self.assertEqual([], self.service.get_modeling()["models"])
+
+    def test_profile_write_failure_restores_connection_modeling_and_current(self):
+        before = self.profiles.read_bytes()
+        digest = self.runtime.mdl_digest()
+        candidate = self.service.prepare_mdl("sales", True)
+        with patch("customer.wren.adapter.admin_service.remove_profile", side_effect=OSError("write failed")):
+            with self.assertRaisesRegex(OSError, "write failed"):
+                self.service.commit_mdl(candidate["candidateToken"], digest)
+        self.assertEqual(before, self.profiles.read_bytes())
+        self.assertEqual(digest, self.runtime.mdl_digest())
+        self.assertTrue(self.service._modeling_path("sales").exists())
+        self.assertTrue((self.service.current_dir / "sales").exists())
+
+    def test_rejects_changed_mdl_or_modeling_and_running_introspection(self):
+        digest = self.runtime.mdl_digest()
+        candidate = self.service.prepare_mdl("sales", True)
+        with self.assertRaisesRegex(RuntimeError, "CURRENT_MDL_CHANGED"):
+            self.service.commit_mdl(candidate["candidateToken"], "outdated")
+        model = self.service.get_modeling("sales")
+        model["revision"] = 2
+        self.service._persist_modeling(model)
+        with self.assertRaisesRegex(RuntimeError, "MODELING_CHANGED"):
+            self.service.commit_mdl(candidate["candidateToken"], digest)
+        self.service._active_job_id = "job"
+        with patch.object(self.service, "get_job", return_value={"profileName": "sales", "status": "RUNNING"}):
+            with self.assertRaisesRegex(RuntimeError, "INTROSPECTION_IN_PROGRESS"):
+                self.service.prepare_mdl("sales", True)
+
+    def test_unmodeled_connection_still_commits_and_deletion_is_repeatable(self):
+        from wren.profile import add_profile
+        add_profile("unused", {"datasource": "mysql"})
+        digest = self.runtime.mdl_digest()
+        for _ in range(2):
+            candidate = self.service.prepare_mdl("unused", True)
+            result = self.service.commit_mdl(candidate["candidateToken"], digest)
+            self.assertEqual(digest, result["mdlDigest"])
+        self.assertNotIn("unused", {item["name"] for item in self.service.list_datasources()["items"]})
+
+    def test_http_candidate_commit_deletes_real_project_and_changes_query_context(self):
+        class TestHandler(Handler):
+            pass
+        TestHandler.admin = self.service
+        TestHandler.runtime = self.runtime
+        TestHandler.service_token = "test-service"
+        server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+
+        def post(path, body):
+            request = Request(base + path, data=json.dumps(body).encode(), method="POST", headers={
+                "Content-Type": "application/json", "X-Wren-Service-Token": "test-service",
+            })
+            with urlopen(request, timeout=5) as response:
+                return json.load(response)["data"]
+
+        try:
+            digest = self.runtime.mdl_digest()
+            candidate = post("/internal/admin/mdl-candidates", {"profileName": "sales", "deleteDatasource": True})
+            self.assertTrue(self.service._modeling_path("sales").exists())
+            result = post(f"/internal/admin/mdl-candidates/{candidate['candidateToken']}/commit", {"expectedMdlDigest": digest})
+            self.assertEqual(candidate["mdlDigest"], result["mdlDigest"])
+            self.assertEqual({"finance"}, set(result["manifest"]["sources"]))
+            self.assertFalse(self.service._modeling_path("sales").exists())
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_http_display_name_update_keeps_profile_unchanged(self):
+        class TestHandler(Handler):
+            pass
+        TestHandler.admin = self.service
+        TestHandler.runtime = self.runtime
+        TestHandler.service_token = "test-service"
+        server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        thread.start()
+        profiles_before = self.profiles.read_bytes()
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}/internal/admin/datasources/sales/display-name",
+            data=json.dumps({"displayName": "华东销售库"}).encode(),
+            method="PUT",
+            headers={"Content-Type": "application/json", "X-Wren-Service-Token": "test-service"},
+        )
+        try:
+            with urlopen(request, timeout=5) as response:
+                result = json.load(response)["data"]
+            self.assertEqual({"name": "sales", "displayName": "华东销售库"}, result)
+            self.assertEqual(profiles_before, self.profiles.read_bytes())
+            self.assertEqual("华东销售库", self.service._load_datasource_display_names()["sales"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_startup_recovers_interrupted_deletion_before_candidate_cleanup(self):
+        from .admin_service import _write_json
+        root = self.service.candidates_dir / ("c" * 32)
+        root.mkdir()
+        _write_json(root / "deletion-journal.json", {
+            "profileName": "sales", "profiles": self.profiles.read_text(encoding="utf-8"),
+            "env": (self.home / ".env").read_text(encoding="utf-8"), "committed": False,
+            "metadata": self.service.datasource_metadata_file.read_text(encoding="utf-8"),
+        })
+        (self.service.current_dir / "sales").rename(root / "previous")
+        self.service._modeling_path("sales").rename(root / "modeling")
+        self.profiles.write_text("active: null\nprofiles: {}\n", encoding="utf-8")
+        self.service._write_datasource_display_names({"finance": "财务数据库"})
+        restarted_runtime = WrenRuntime({})
+        restarted = AdminService(self.root / "project", self.root / "instance", restarted_runtime)
+        try:
+            self.assertTrue(restarted._modeling_path("sales").exists())
+            self.assertEqual({"sales", "finance"}, set(restarted_runtime.context_snapshot()["manifest"]["sources"]))
+            self.assertEqual(2, len(restarted.list_datasources()["items"]))
+            self.assertEqual("销售数据库", restarted._load_datasource_display_names()["sales"])
+            self.assertFalse(root.exists())
+        finally:
+            restarted.close()
+            restarted_runtime.close()
+
+
 class AdminServiceModelingTest(unittest.TestCase):
+    def test_datasource_display_name_is_unicode_mutable_and_keeps_profile_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "instance" / ".wren"
+            profiles = home / "profiles.yml"
+            home.mkdir(parents=True)
+            with patch.multiple("wren.profile", _WREN_HOME=home, _PROFILES_FILE=profiles):
+                service = AdminService(root / "project", root / "instance", FakeRuntime())
+                request = {
+                    "name": "sales",
+                    "displayName": "销售数据库",
+                    "datasource": "mysql",
+                    "host": "db.internal",
+                    "port": "3306",
+                    "database": "sales",
+                    "user": "app",
+                    "password": "secret",
+                }
+                try:
+                    with patch.object(service, "_test_profile"):
+                        service.save_datasource(request)
+                        service.save_datasource(
+                            {**request, "name": "ignored", "displayName": "华东销售库", "password": ""},
+                            update_name="sales",
+                        )
+
+                    item = service.list_datasources()["items"][0]
+                    self.assertEqual("sales", item["name"])
+                    self.assertEqual("华东销售库", item["displayName"])
+                    self.assertEqual({"sales"}, set(yaml.safe_load(profiles.read_text(encoding="utf-8"))["profiles"]))
+                finally:
+                    service.close()
+
+    def test_datasource_display_name_rejects_duplicates_and_control_characters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "instance" / ".wren"
+            profiles = home / "profiles.yml"
+            home.mkdir(parents=True)
+            with patch.multiple("wren.profile", _WREN_HOME=home, _PROFILES_FILE=profiles):
+                service = AdminService(root / "project", root / "instance", FakeRuntime())
+                request = {
+                    "datasource": "mysql", "host": "db.internal", "port": "3306",
+                    "database": "sales", "user": "app", "password": "secret",
+                }
+                try:
+                    with patch.object(service, "_test_profile"):
+                        service.save_datasource({**request, "name": "sales", "displayName": "销售数据库"})
+                        with self.assertRaisesRegex(ValueError, "displayName already exists"):
+                            service.save_datasource({**request, "name": "finance", "displayName": "销售数据库"})
+                        with self.assertRaisesRegex(ValueError, "displayName contains control characters"):
+                            service.save_datasource({**request, "name": "finance", "displayName": "财务\n数据库"})
+                finally:
+                    service.close()
+
+    def test_display_name_only_update_does_not_test_or_rewrite_connection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "instance" / ".wren"
+            profiles = home / "profiles.yml"
+            home.mkdir(parents=True)
+            profiles.write_text(yaml.safe_dump({"active": "sales", "profiles": {
+                "sales": {"datasource": "mysql", "host": "db.internal", "password": "${WREN_SALES_PASSWORD}"},
+            }}), encoding="utf-8")
+            with patch.multiple("wren.profile", _WREN_HOME=home, _PROFILES_FILE=profiles):
+                service = AdminService(root / "project", root / "instance", FakeRuntime())
+                profiles_before = profiles.read_bytes()
+                try:
+                    with patch.object(service, "_test_profile") as test_profile:
+                        result = service.update_datasource_display_name("sales", {"displayName": "销售数据库"})
+                    self.assertEqual({"name": "sales", "displayName": "销售数据库"}, result)
+                    self.assertEqual(profiles_before, profiles.read_bytes())
+                    self.assertEqual({"sales": "销售数据库"}, service._load_datasource_display_names())
+                    test_profile.assert_not_called()
+                finally:
+                    service.close()
+
+    def test_datasource_list_falls_back_to_profile_name_without_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = AdminService(root / "project", root / "instance", FakeRuntime())
+            try:
+                with patch("customer.wren.adapter.admin_service.list_profiles", return_value={
+                    "legacy_sales": {"datasource": "mysql"},
+                }), patch("customer.wren.adapter.admin_service.get_active_name", return_value="legacy_sales"):
+                    item = service.list_datasources()["items"][0]
+                self.assertEqual("legacy_sales", item["name"])
+                self.assertEqual("legacy_sales", item["displayName"])
+            finally:
+                service.close()
+
+    def test_datasource_metadata_write_failure_rolls_back_profile_secret_and_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "instance" / ".wren"
+            profiles = home / "profiles.yml"
+            home.mkdir(parents=True)
+            profiles.write_text("active: null\nprofiles: {}\n", encoding="utf-8")
+            env_file = home / ".env"
+            env_file.write_text("EXISTING=value\n", encoding="utf-8")
+            with patch.multiple("wren.profile", _WREN_HOME=home, _PROFILES_FILE=profiles):
+                service = AdminService(root / "project", root / "instance", FakeRuntime())
+                profiles_before = profiles.read_bytes()
+                env_before = env_file.read_bytes()
+                try:
+                    with patch.object(service, "_test_profile"), patch.object(
+                            service, "_write_datasource_display_names", side_effect=OSError("metadata write failed")):
+                        with self.assertRaisesRegex(OSError, "metadata write failed"):
+                            service.save_datasource({
+                                "name": "sales", "displayName": "销售数据库", "datasource": "mysql",
+                                "host": "db.internal", "port": "3306", "database": "sales",
+                                "user": "app", "password": "secret",
+                                "secretName": "WREN_METADATA_ROLLBACK_TEST_PASSWORD",
+                            })
+                    self.assertEqual(profiles_before, profiles.read_bytes())
+                    self.assertEqual(env_before, env_file.read_bytes())
+                    self.assertFalse(service.datasource_metadata_file.exists())
+                    self.assertNotIn("WREN_METADATA_ROLLBACK_TEST_PASSWORD", os.environ)
+                finally:
+                    service.close()
+
     def test_backup_round_trip_restores_profiles_and_current_mdl(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -35,6 +351,10 @@ class AdminServiceModelingTest(unittest.TestCase):
                 (root / "instance" / ".wren").mkdir(parents=True)
                 (root / "instance" / ".wren" / "profiles.yml").write_text("sales: {}\n", encoding="utf-8")
                 (root / "instance" / ".wren" / ".env").write_text("DB_PASSWORD=secret\n", encoding="utf-8")
+                service.datasource_metadata_file.write_text(
+                    json.dumps({"version": 1, "displayNames": {"sales": "销售数据库"}}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
                 current = root / "project" / "projects" / "current" / "sales"
                 current.mkdir(parents=True)
                 (current / "wren_project.yml").write_text("name: customer_database\n", encoding="utf-8")
@@ -43,6 +363,7 @@ class AdminServiceModelingTest(unittest.TestCase):
                 result = service.restore_backup(backup)
                 self.assertTrue(result["restored"])
                 self.assertEqual("DB_PASSWORD=secret\n", (root / "instance" / ".wren" / ".env").read_text(encoding="utf-8"))
+                self.assertEqual("销售数据库", service._load_datasource_display_names()["sales"])
                 self.assertEqual(current, runtime.reloaded / "sales")
             finally:
                 service.close()
@@ -236,10 +557,11 @@ class AdminServiceModelingTest(unittest.TestCase):
                 (service.jobs_dir / f"{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
                 (service.jobs_dir / f"{job_id}.snapshot.json").write_text(json.dumps(snapshot), encoding="utf-8")
 
-                modeling = service.create_modeling(
-                    job_id,
-                    {"tableIds": [item["id"] for item in snapshot["tables"]]},
-                )
+                with patch("customer.wren.adapter.admin_service.list_profiles", return_value={snapshot["profileName"]: {"datasource": "mysql"}}):
+                    modeling = service.create_modeling(
+                        job_id,
+                        {"tableIds": [item["id"] for item in snapshot["tables"]]},
+                    )
 
                 self.assertEqual(["tenant_id", "id"], modeling["models"][0]["primaryKey"])
                 self.assertFalse(modeling["setupCompleted"])

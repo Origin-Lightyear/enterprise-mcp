@@ -132,6 +132,47 @@ class RuntimeCatalogServiceTest {
         String catalogJson = String.valueOf(request.get("catalogJson"));
         assertThat(catalogJson).contains("erp.order-query").doesNotContain("database.semantic-query");
         assertThat(runtimeCatalog.requirePlanningBinding().mdlDigest()).isEmpty();
+        verify(mdlAdapter, never()).datasourceDisplayNames();
+    }
+
+    /** 验证 Planning Catalog 发布中文显示名称，但语义模型仍保留稳定数据源键。 */
+    @Test
+    void shouldPublishDatasourceDisplayNamesWithoutChangingSourceKeys() {
+        when(mdlAdapter.current()).thenReturn(Optional.of(mdl("current-mdl", "sales")));
+        when(mdlAdapter.datasourceDisplayNames()).thenReturn(Map.of("sales", "销售数据库"));
+        confirmAndReferenceSuccessfully();
+
+        runtimeCatalog.synchronize();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> request = (Map<String, Object>) org.mockito.Mockito.mockingDetails(gatewayClient)
+                .getInvocations().stream()
+                .filter(invocation -> invocation.getMethod().getName().equals("confirmCatalog"))
+                .findFirst().orElseThrow().getArgument(0);
+        String catalogJson = String.valueOf(request.get("catalogJson"));
+        assertThat(catalogJson)
+                .contains("\"semanticSourceDisplayNames\":{\"sales\":\"销售数据库\"}")
+                .contains("\"sources\":{\"sales\":")
+                .doesNotContain("\"sources\":{\"销售数据库\":");
+    }
+
+    /** 验证显示元数据不可用时清除可执行绑定并等待自动恢复。 */
+    @Test
+    void shouldFailClosedWhenDatasourceDisplayNamesAreUnavailable() {
+        when(mdlAdapter.current()).thenReturn(Optional.of(mdl("current-mdl", "sales")));
+        when(mdlAdapter.datasourceDisplayNames()).thenReturn(Map.of("sales", "销售数据库"));
+        confirmAndReferenceSuccessfully();
+        runtimeCatalog.synchronize();
+        when(mdlAdapter.datasourceDisplayNames()).thenThrow(new IllegalStateException("adapter offline"));
+
+        assertThatThrownBy(() -> runtimeCatalog.synchronize())
+                .isInstanceOf(CatalogException.class)
+                .extracting(exception -> ((CatalogException) exception).code())
+                .isEqualTo(CatalogException.Code.NOT_READY);
+
+        assertThat(runtimeCatalog.current().readiness()).isEqualTo(PlanningReadinessStatus.NOT_READY);
+        assertThatThrownBy(() -> runtimeCatalog.requirePlanningBinding())
+                .isInstanceOf(CatalogException.class);
     }
 
     private void confirmAndReferenceSuccessfully() {
@@ -140,6 +181,75 @@ class RuntimeCatalogServiceTest {
             return Map.of("catalogDigest", request.get("catalogDigest"));
         });
         when(gatewayClient.referenceCatalog(anyMap())).thenAnswer(invocation -> Map.of("saved", true));
+    }
+
+    /** 验证删除最后一个生效源前先确认不含 Wren 能力的 Catalog。 */
+    @Test
+    void shouldConfirmEmptyCatalogBeforeDeletingLastDatasource() {
+        when(schemaRegistry.getCloudPlanningSchemas()).thenReturn(List.of(capability("database.semantic-query", "WREN")));
+        when(mdlAdapter.current()).thenReturn(Optional.of(mdl("old-mdl", "sales")));
+        when(mdlAdapter.prepareDeletion("sales")).thenReturn(new PreparedMdl("delete-1", SemanticModelSnapshot.empty()));
+        when(mdlAdapter.commit("delete-1", "old-mdl")).thenReturn(SemanticModelSnapshot.empty());
+        confirmAndReferenceSuccessfully();
+
+        MdlUpdateResult result = runtimeCatalog.applyMdl(new MdlUpdateCommand("sales", "old-mdl", "delete-1", "admin-1", true));
+
+        assertThat(result.binding().mdlDigest()).isEmpty();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(gatewayClient, mdlAdapter);
+        order.verify(gatewayClient).confirmCatalog(org.mockito.ArgumentMatchers.argThat(request ->
+                "{\"capabilities\":[]}".equals(request.get("catalogJson"))));
+        order.verify(mdlAdapter).commit("delete-1", "old-mdl");
+        order.verify(gatewayClient).referenceCatalog(anyMap());
+        assertThatThrownBy(() -> runtimeCatalog.requireExecutable(plan(result.binding(), "old-mdl")))
+                .isInstanceOf(CatalogException.class);
+    }
+
+    /** 验证删除候选未被云端确认时不删除连接与 Current MDL。 */
+    @Test
+    void shouldPreserveDatasourceWhenDeletionConfirmationFails() {
+        when(mdlAdapter.current()).thenReturn(Optional.of(mdl("old-mdl", "sales")));
+        when(mdlAdapter.prepareDeletion("sales")).thenReturn(new PreparedMdl("delete-1", SemanticModelSnapshot.empty()));
+        when(gatewayClient.confirmCatalog(anyMap())).thenThrow(new IllegalStateException("offline"));
+
+        assertThatThrownBy(() -> runtimeCatalog.applyMdl(new MdlUpdateCommand("sales", "old-mdl", "delete-1", "admin-1", true)))
+                .isInstanceOf(CatalogException.class);
+
+        verify(mdlAdapter, never()).commit("delete-1", "old-mdl");
+        verify(mdlAdapter).discard("delete-1");
+    }
+
+    /** 验证云端拒绝删除候选时，保留本地数据并向管理页面返回明确原因。 */
+    @Test
+    void shouldExposeCloudRejectionWithoutDeletingDatasource() {
+        when(mdlAdapter.current()).thenReturn(Optional.of(mdl("old-mdl", "sales")));
+        when(mdlAdapter.prepareDeletion("sales")).thenReturn(new PreparedMdl("delete-1", SemanticModelSnapshot.empty()));
+        when(gatewayClient.confirmCatalog(anyMap())).thenThrow(new PlanningGatewayClient.CatalogRequestException(
+                400, "Control Plane rejected Catalog request: HTTP 400 [INVALID_REQUEST]: invalid catalog", null));
+
+        assertThatThrownBy(() -> runtimeCatalog.applyMdl(
+                new MdlUpdateCommand("sales", "old-mdl", "delete-1", "admin-1", true)))
+                .isInstanceOf(CatalogException.class).hasMessageContaining("HTTP 400 [INVALID_REQUEST]: invalid catalog")
+                .satisfies(exception -> assertThat(((CatalogException) exception).code())
+                        .isEqualTo(CatalogException.Code.VALIDATION_FAILED));
+
+        verify(mdlAdapter, never()).commit("delete-1", "old-mdl");
+        verify(mdlAdapter).discard("delete-1");
+    }
+
+    /** 验证未生效源也提交删除，并可用同一幂等键重试。 */
+    @Test
+    void shouldCommitDeletionEvenWhenMdlDigestIsUnchanged() {
+        SemanticModelSnapshot current = mdl("old-mdl", "finance");
+        when(mdlAdapter.current()).thenReturn(Optional.of(current));
+        when(mdlAdapter.prepareDeletion("sales")).thenReturn(new PreparedMdl("delete-1", current));
+        when(mdlAdapter.commit("delete-1", "old-mdl")).thenReturn(current);
+        confirmAndReferenceSuccessfully();
+        MdlUpdateCommand command = new MdlUpdateCommand("sales", "old-mdl", "delete-1", "admin-1", true);
+
+        MdlUpdateResult result = runtimeCatalog.applyMdl(command);
+        assertThat(runtimeCatalog.applyMdl(command)).isEqualTo(result);
+
+        verify(mdlAdapter, times(1)).commit("delete-1", "old-mdl");
     }
 
     private PrivateMcpToolSchemaRegistry.CloudPlanningSchema capability(String id, String executorType) {

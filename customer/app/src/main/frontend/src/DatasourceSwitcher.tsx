@@ -20,7 +20,7 @@ export function DatasourceSwitcher({ datasources, currentProfileName, loading, o
     menu={{
       items: modeledDatasources.map((item) => ({
         key: item.name,
-        label: `${item.name} (${item.database})`,
+        label: `${item.displayName} (${item.database})`,
         disabled: item.name === currentProfileName,
       })),
       onClick: ({ key }) => {
@@ -33,7 +33,7 @@ export function DatasourceSwitcher({ datasources, currentProfileName, loading, o
     }}
   >
     <Button className="datasource-switcher" aria-label="切换数据源" title="切换数据源" loading={loading}>
-      <Database size={14}/><span>{current ? `${current.name} · ${current.database}` : '选择已建模数据源'}</span><ChevronDown size={14}/>
+      <Database size={14}/><span>{current ? `${current.displayName} · ${current.database}` : '选择已建模数据源'}</span><ChevronDown size={14}/>
     </Button>
   </Dropdown>;
 }

@@ -51,7 +51,7 @@ export function SetupConnection({ onSaved, onCancel, onModeling, initial }: { on
     <Typography.Title level={1}>{initial ? '编辑数据源' : '连接数据源'}</Typography.Title>
     <Typography.Paragraph>填写连接信息。保存时会先测试连接，成功后才会写入配置。</Typography.Paragraph>
     <div className="connection-source"><span className={`source-logo ${source.value}`}><Server size={24}/></span><strong>{source.label}</strong></div>
-    <Form className="connection-form" layout="vertical" initialValues={{ ...initial, datasource: selected, port: initial?.port ? Number(initial.port) : source.port, active: initial?.active ?? true, ssl: true }} onFinish={async (values) => {
+    <Form className="connection-form" layout="vertical" initialValues={{ ...initial, displayName: initial?.displayName || initial?.name, datasource: selected, port: initial?.port ? Number(initial.port) : source.port, active: initial?.active ?? true, ssl: true }} onFinish={async (values) => {
       setBusy(true); setError('');
       try {
         await api(initial ? `/datasources/${encodeURIComponent(initial.name)}` : '/datasources', { method: initial ? 'PUT' : 'POST', body: JSON.stringify({
@@ -67,7 +67,8 @@ export function SetupConnection({ onSaved, onCancel, onModeling, initial }: { on
       }
     }} requiredMark>
       <Form.Item name="datasource" hidden><Input/></Form.Item>
-      <Form.Item name="name" label="显示名称" rules={[{ required: true, message: '请输入连接名称' }, { pattern: /^[A-Za-z][A-Za-z0-9_-]{1,63}$/, message: '以英文字母开头，仅使用字母、数字、下划线或短横线' }]}><Input disabled={Boolean(initial)} placeholder="customer-primary"/></Form.Item>
+      <Form.Item name="displayName" label="显示名称" rules={[{ required: true, whitespace: true, message: '请输入显示名称' }, { max: 64, message: '显示名称最多 64 个字符' }]}><Input placeholder="例如：销售数据库"/></Form.Item>
+      <Form.Item name="name" label="连接标识" extra="创建后不可修改，用于权限绑定和 MCP 查询路由" rules={[{ required: true, message: '请输入连接标识' }, { pattern: /^[A-Za-z][A-Za-z0-9_-]{1,63}$/, message: '以英文字母开头，仅使用字母、数字、下划线或短横线' }]}><Input disabled={Boolean(initial)} placeholder="customer-primary"/></Form.Item>
       <Form.Item name="host" label="主机" rules={[{ required: true, message: '请输入数据库主机' }]}><Input placeholder="10.1.1.1"/></Form.Item>
       <Form.Item name="port" label="端口" rules={[{ required: true, message: '请输入端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }}/></Form.Item>
       <Form.Item name="user" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}><Input/></Form.Item>

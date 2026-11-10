@@ -45,6 +45,8 @@ public class K3KnowledgePublisher implements PlanningKnowledgeProvider {
     private final Object uploadLock = new Object();
     private volatile String uploadedDigest = "";
     private volatile String uploadedCatalogDigest = "";
+    /** 记录最近一次上传失败摘要，避免定时任务每五秒重复输出相同告警。 */
+    private volatile String lastUploadFailureSummary = "";
 
     /**
      * 注入结构知识和当前 Runtime 注册身份。
@@ -119,9 +121,30 @@ public class K3KnowledgePublisher implements PlanningKnowledgeProvider {
         }
         try {
             currentDigest();
+            if (!lastUploadFailureSummary.isBlank()) {
+                log.info("K3 knowledge upload recovered: tenantId={}, instanceId={}",
+                        identity.getTenantId(), identity.getInstanceId());
+                lastUploadFailureSummary = "";
+            }
         } catch (RuntimeException exception) {
-            log.warn("K3 knowledge upload pending: reason={}", exception.getClass().getSimpleName());
+            String failureSummary = describeFailure(exception);
+            if (!failureSummary.equals(lastUploadFailureSummary)) {
+                lastUploadFailureSummary = failureSummary;
+                log.warn("K3 knowledge upload pending: tenantId={}, instanceId={}, reason={}",
+                        identity.getTenantId(), identity.getInstanceId(), failureSummary, exception);
+            } else {
+                log.debug("K3 knowledge upload remains pending: tenantId={}, instanceId={}, reason={}",
+                        identity.getTenantId(), identity.getInstanceId(), failureSummary);
+            }
         }
+    }
+
+    private String describeFailure(RuntimeException exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return exception.getClass().getSimpleName();
+        }
+        return exception.getClass().getSimpleName() + ": " + message;
     }
 
     /**

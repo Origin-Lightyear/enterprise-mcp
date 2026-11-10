@@ -17,7 +17,7 @@ class RequestExecutionContextHolderTest {
     @Test
     void shouldClearContextWhenScopeCloses() {
         RequestExecutionContextHolder holder = new RequestExecutionContextHolder();
-        RequestExecutionContext context = new RequestExecutionContext(null, null, "mdl-digest");
+        RequestExecutionContext context = new RequestExecutionContext(null, "mdl-digest");
 
         try (RequestExecutionContextHolder.Scope ignored = holder.bind(context)) {
             assertThat(holder.requireContext()).isSameAs(context);
@@ -32,7 +32,7 @@ class RequestExecutionContextHolderTest {
     @Test
     void shouldClearContextAfterFailure() {
         RequestExecutionContextHolder holder = new RequestExecutionContextHolder();
-        RequestExecutionContext context = new RequestExecutionContext(null, null, "mdl-digest");
+        RequestExecutionContext context = new RequestExecutionContext(null, "mdl-digest");
 
         assertThatThrownBy(() -> {
             try (RequestExecutionContextHolder.Scope ignored = holder.bind(context)) {

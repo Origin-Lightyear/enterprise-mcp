@@ -1,4 +1,4 @@
-package com.customer.mcp.tool.publicmcp;
+package com.customer.mcp.tool.publicmcp.k3.unfixed;
 
 import com.customer.mcp.k3.catalog.K3Catalog;
 import com.customer.mcp.k3.client.K3Gateway;
